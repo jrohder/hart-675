@@ -26,21 +26,159 @@ ESP32-based portable wireless HART communicator with Bluetooth Classic SPP and W
 - **Operation**: Transparent bridge mode (no protocol parsing)
 - **Future**: Extensible for HART command implementation
 
+## Quick Start Guide (For Beginners)
+
+### What You Need
+
+Before starting, make sure you have:
+1. **Computer** - Windows, Mac, or Linux with USB port
+2. **Adafruit HUZZAH32 ESP32 Feather Board** - Available from Adafruit.com
+3. **USB Cable** - Micro USB (included with many boards)
+4. **Arduino IDE** - Free software download from arduino.cc
+5. **This Repository** - Download the code from GitHub
+
+### Step-by-Step Setup Instructions
+
+#### **Step 1: Download Arduino IDE**
+
+1. Go to **https://www.arduino.cc/en/software**
+2. Download the **Arduino IDE** for your computer (Windows/Mac/Linux)
+3. Install it by following the installer prompts
+4. Launch Arduino IDE
+
+#### **Step 2: Add ESP32 Board Support to Arduino IDE**
+
+1. Open **Arduino IDE**
+2. Go to **File** → **Preferences** (Windows/Linux) or **Arduino** → **Preferences** (Mac)
+3. In the "Additional Boards Manager URLs" field, paste this URL:
+   ```
+   https://espressif.github.io/arduino-esp32/package_esp32_index.json
+   ```
+4. Click **OK**
+5. Go to **Tools** → **Board** → **Boards Manager**
+6. Search for **"ESP32"**
+7. Click on **"esp32 by Espressif Systems"**
+8. Click **Install** (wait for download to complete - may take a few minutes)
+9. Click **Close**
+
+#### **Step 3: Select Your Board**
+
+1. Go to **Tools** → **Board**
+2. Find and select **"HUZZAH32 (ESP32 Feather)"** (may be listed under esp32)
+3. Go to **Tools** → **Port** 
+4. Select your USB port (usually **COM3** on Windows, **/dev/cu.usbserial** on Mac)
+5. If you don't see a port, install the **CH340 USB driver**:
+   - Search for "CH340 driver" for your operating system
+   - Download and install it
+   - Restart Arduino IDE
+   - The port should appear in **Tools** → **Port**
+
+#### **Step 4: Install Required Libraries**
+
+1. Go to **Sketch** → **Include Library** → **Manage Libraries**
+2. Search for **"ESPAsyncWebServer"** by me-no-dev
+   - Click on it
+   - Click **Install**
+3. Search for **"AsyncTCP"** by me-no-dev
+   - Click on it
+   - Click **Install**
+4. Close the Library Manager
+
+**Note**: BluetoothSerial comes built-in with the ESP32 board support, so you don't need to install it separately.
+
+#### **Step 5: Clone or Download the Repository**
+
+**Option A: Using Git (Advanced)**
+```bash
+git clone https://github.com/jrohder/wireless-hart-67.git
+cd wireless-hart-67
+```
+
+**Option B: Download as ZIP (Recommended for Beginners)**
+1. Go to **https://github.com/jrohder/wireless-hart-67**
+2. Click the green **"Code"** button
+3. Click **"Download ZIP"**
+4. Extract (unzip) the folder to a location you can find easily
+
+#### **Step 6: Open the Project in Arduino IDE**
+
+1. In Arduino IDE, go to **File** → **Open**
+2. Navigate to the folder you downloaded/cloned
+3. Open the **`src`** folder
+4. Select **`main.cpp`**
+5. Click **Open**
+6. The code should now load in Arduino IDE
+
+#### **Step 7: Connect Your Board**
+
+1. Take your Adafruit HUZZAH32 board
+2. Connect it to your computer using the **Micro USB cable**
+3. You should see the USB port appear in **Tools** → **Port**
+4. Arduino IDE may show "Device Connected" notification
+
+#### **Step 8: Compile and Upload**
+
+1. Click the **Verify button** (✓ checkmark icon) to check for errors
+   - The code should compile without errors
+   - You'll see "Done compiling" message at the bottom
+2. Click the **Upload button** (→ arrow icon) to upload to your board
+   - You'll see "Uploading..." at the bottom
+   - Wait for "Upload complete" message
+3. The RGB LED on the board should light up with alternating red/blue pattern
+
+#### **Step 9: Monitor Serial Output (Debugging)**
+
+1. Click **Tools** → **Serial Monitor**
+2. In the bottom right, set the baud rate to **115200**
+3. You should see boot messages like:
+   ```
+   === Wireless HART 67 Communicator ===
+   Firmware Version: 1.0.0
+   [INIT] Initializing peripherals...
+   [MODE] Bluetooth mode enabled
+   [INIT] Initialization complete
+   ```
+
+### Troubleshooting
+
+| Problem | Solution |
+|---------|----------|
+| Board not appearing in Tools → Port | Install CH340 USB driver; restart Arduino IDE |
+| "Upload failed" error | Check USB cable; try different USB port on computer |
+| Compilation errors | Make sure you installed ESPAsyncWebServer and AsyncTCP libraries |
+| Serial Monitor shows gibberish | Set baud rate to 115200 in Serial Monitor |
+| LED not lighting up | Verify USB cable is connected; check board with different cable |
+
+### Next Steps After Upload
+
+**Test Bluetooth Mode:**
+1. On your phone, go to Bluetooth settings
+2. Search for **"wireless_hart_67"**
+3. Tap to pair (PIN: **0420**)
+4. Open a Bluetooth terminal app (Android: Serial Bluetooth Terminal, iOS: Terminal for Bluetooth)
+5. You should be able to send/receive HART data
+
+**Test WiFi Dashboard:**
+1. On your phone or computer, go to WiFi settings
+2. Connect to WiFi network: **"wireless_hart_67"**
+3. Password: **"iande0315"**
+4. Open browser and go to: **http://192.168.4.1**
+5. You should see the live dashboard with system status
+
+**Test Button:**
+- **Single Press**: RGB LED shows battery percentage for 5 seconds
+- **Triple Press**: Switches between Bluetooth and WiFi modes (LED changes color)
+- **Long Press (3 seconds)**: Device enters sleep mode (LED turns off)
+
 ## Setup
 
-### Arduino IDE
+### Arduino IDE (Beginner-Friendly)
 
-1. Install ESP32 board support via Board Manager
-2. Add `https://espressif.github.io/arduino-esp32/package_esp32_index.json` to Additional Boards Manager URLs
-3. Install library dependencies:
-   - ESPAsyncWebServer
-   - ESPAsyncTCP
-   - BluetoothSerial (built-in)
-4. Open `src/main.cpp` and compile
+See the **Quick Start Guide** section above for detailed step-by-step instructions!
 
-### PlatformIO
+### PlatformIO (Advanced)
 
-The project includes a `platformio.ini` configuration file. Simply run:
+For experienced developers, the project includes a `platformio.ini` configuration file:
 
 ```bash
 platformio run --target upload
