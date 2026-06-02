@@ -57,6 +57,7 @@
 // ==================== Web Server Settings ====================
 #define WEB_SERVER_PORT 80
 #define WEB_DASHBOARD_REFRESH_MS 1000
+#define CLIENT_CHECK_INTERVAL_MS 1000
 
 // ==================== LED Indication Timings ====================
 #define LED_ALTERNATE_INTERVAL_MS 500

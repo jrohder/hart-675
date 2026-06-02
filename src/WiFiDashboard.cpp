@@ -34,6 +34,10 @@ void WiFiDashboard::update() {
   checkClientConnection();
 }
 
+bool WiFiDashboard::hasClient() const {
+  return clientConnected;
+}
+
 void WiFiDashboard::setupRoutes() {
   // Root dashboard
   server.on("/", HTTP_GET, [this](AsyncWebServerRequest *request) {

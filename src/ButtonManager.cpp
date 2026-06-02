@@ -36,13 +36,14 @@ void ButtonManager::handlePress() {
 }
 
 void ButtonManager::handleRelease() {
-  unsigned long pressDuration = millis() - pressStartTime;
-  unsigned long timeSinceLastRelease = millis() - lastReleaseTime;
+  unsigned long now = millis();
+  unsigned long pressDuration = now - pressStartTime;
+  unsigned long timeSinceLastRelease = now - lastReleaseTime;
 
   if (pressDuration >= BUTTON_LONG_PRESS_MS) {
     // Long press detected
     lastEvent = BUTTON_LONG_PRESS;
-    lastEventTime = millis();
+    lastEventTime = now;
     pressCount = 0;
     eventConsumed = false;
   } else if (timeSinceLastRelease < BUTTON_TRIPLE_PRESS_WINDOW_MS) {
@@ -50,7 +51,7 @@ void ButtonManager::handleRelease() {
     pressCount++;
     if (pressCount == 3) {
       lastEvent = BUTTON_TRIPLE_PRESS;
-      lastEventTime = millis();
+      lastEventTime = now;
       pressCount = 0;
       eventConsumed = false;
     }
@@ -59,16 +60,7 @@ void ButtonManager::handleRelease() {
     pressCount = 1;
   }
 
-  lastReleaseTime = millis();
-
-  // Check if we should fire single press after window
-  if (pressCount == 1 &&
-      (millis() - lastReleaseTime) >= BUTTON_TRIPLE_PRESS_WINDOW_MS) {
-    lastEvent = BUTTON_SINGLE_PRESS;
-    lastEventTime = millis();
-    pressCount = 0;
-    eventConsumed = false;
-  }
+  lastReleaseTime = now;
 }
 
 ButtonManager::ButtonEvent ButtonManager::getEvent() {
