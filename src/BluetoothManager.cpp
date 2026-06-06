@@ -4,7 +4,7 @@ BluetoothManager::BluetoothManager() : initialized(false) {}
 
 void BluetoothManager::begin() {
   // Start Bluetooth Classic with device name in Slave mode
-  if (!btSerial.begin(BT_DEVICE_NAME, true)) {  // true = Slave mode
+  if (!btSerial.begin(BT_DEVICE_NAME)) {  // true = Slave mode
     Serial.println("[BT] Failed to start Bluetooth");
     initialized = false;
     return;
@@ -15,7 +15,9 @@ void BluetoothManager::begin() {
   Serial.printf("[BT] PIN: %s\n", BT_PIN_CODE);
   Serial.println("[BT] Device is discoverable and waiting for connections");
 
-  // Note: BluetoothSerial library PIN configuration:
+  btSerial.setPin(BT_PIN_CODE);
+
+  // Bluetooth PIN configuration:
   // The BluetoothSerial library in Arduino-ESP32 sets a default PIN of "1234"
   // To use PIN "0420", the configuration must be done via:
   // 1. NVS (Non-Volatile Storage) - requires ESP-IDF level access

@@ -14,7 +14,7 @@ void HartBridge::update() {
   }
 
   lastUpdateTime = millis();
-  carrierDetected = digitalRead(HART_OCD_PIN) == HIGH || uart->available() > 0;
+  carrierDetected = (digitalRead(HART_OCD_PIN) == HIGH);
 }
 
 void HartBridge::write(uint8_t byte) {
