@@ -4,7 +4,7 @@
 #include <Arduino.h>
 
 // ==================== Firmware ====================
-#define FW_VERSION "3.0.2"
+#define FW_VERSION "3.0.3"
 #define FW_BUILD_DATE __DATE__
 
 // Set to 0 for production use with PACTware over USB: the single USB UART is
@@ -79,7 +79,8 @@
 #define DEFAULT_HART_MASTER_ENABLED 1     // auto-poll on boot
 #define DEFAULT_HART_POLL_ADDRESS 0       // single polling address to query
 #define HART_MASTER_PREAMBLE_COUNT 5      // 0xFF bytes before each request
-#define HART_MASTER_RESP_TIMEOUT_MS 400   // wait for first response byte
+#define HART_MASTER_RESP_TIMEOUT_MS 400    // wait for first response byte (reads)
+#define HART_MASTER_WRITE_RESP_TIMEOUT_MS 2500  // writes can respond slowly
 #define HART_MASTER_INTERBYTE_MS 30       // end-of-frame gap (>1 char @1200)
 #define HART_MASTER_FIND_INTERVAL_MS 750  // retry cadence while searching
 #define HART_MASTER_POLL_INTERVAL_MS 1000 // device data refresh cadence

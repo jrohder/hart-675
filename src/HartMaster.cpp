@@ -10,7 +10,9 @@ HartMaster::HartMaster()
     : hart(nullptr), enabled(false), state(ST_IDLE),
       pollAddress(DEFAULT_HART_POLL_ADDRESS), haveLongAddr(false),
       lastActionMs(0), pollStep(0), consecutiveFailures(0), cmdQueuedMs(0),
-      refreshBurst(false), txFrames(0),
+      refreshBurst(false), maintOp(MaintOp::NONE), maintDone(true),
+      maintOk(false), maintUrv(0), maintLrv(0), maintDamp(0), maintPoll(0),
+      txFrames(0),
       rxFrames(0), rxPayloadLen(0), rcCode(0), devStatus(0),
       cmdPending(false), cmdSeq(0), pendCmd(0), pendLen(0), pendId(0),
       cmdDone(false), resId(0), resOk(false), resRc(0), resDs(0), resLen(0) {
@@ -142,7 +144,7 @@ String HartMaster::unitString(uint8_t code) {
   case 60: return "gal/h";
   case 61: return "Impgal/h";
   case 240: return "mfr";
-  default: return "code " + String(code);
+  default: return String("unit ") + String(code);
   }
 }
 
@@ -205,12 +207,12 @@ size_t HartMaster::buildRequest(bool useLong, uint8_t pollAddr, uint8_t command,
   return i;
 }
 
-int HartMaster::receiveFrame(uint8_t *buf, size_t cap) {
+int HartMaster::receiveFrame(uint8_t *buf, size_t cap,
+                             uint32_t firstByteTimeoutMs) {
   size_t idx = 0;
   unsigned long start = millis();
-  // Wait for the first byte.
   while (!hart->available()) {
-    if (millis() - start > HART_MASTER_RESP_TIMEOUT_MS) {
+    if (millis() - start > firstByteTimeoutMs) {
       return 0;
     }
     vTaskDelay(1);
@@ -231,7 +233,8 @@ int HartMaster::receiveFrame(uint8_t *buf, size_t cap) {
 }
 
 bool HartMaster::transact(bool useLong, uint8_t pollAddr, uint8_t command,
-                          const uint8_t *payload, uint8_t payloadLen) {
+                          const uint8_t *payload, uint8_t payloadLen,
+                          uint32_t respTimeoutMs) {
   if (hart == nullptr) {
     return false;
   }
@@ -254,7 +257,7 @@ bool HartMaster::transact(bool useLong, uint8_t pollAddr, uint8_t command,
   hart->endTransmit();  // flush UART, return to receive mode
 
   uint8_t rx[300];
-  int n = receiveFrame(rx, sizeof(rx));
+  int n = receiveFrame(rx, sizeof(rx), respTimeoutMs);
   if (n <= 0) {
     device.commErrors++;
     return false;
@@ -382,10 +385,12 @@ void HartMaster::applyResponse(uint8_t cmd, const uint8_t *p, uint8_t len) {
     }
     break;
   case 14:  // Transducer information (alternate range source)
-    if (len >= 4 && p[3]) {
+    if (len >= 4) {
       device.configUnits = p[3];
-      device.pvUnitsCode = p[3];
-      device.pvUnits = unitString(p[3]);
+      if (p[3]) {
+        device.pvUnitsCode = p[3];
+        device.pvUnits = unitString(p[3]);
+      }
     }
     if (len >= 8) {
       device.configUrv = beFloat(&p[4]);
@@ -399,10 +404,12 @@ void HartMaster::applyResponse(uint8_t cmd, const uint8_t *p, uint8_t len) {
     }
     break;
   case 15:  // PV output information
-    if (len >= 1 && p[0]) {
+    if (len >= 1) {
       device.configUnits = p[0];
-      device.pvUnitsCode = p[0];
-      device.pvUnits = unitString(p[0]);
+      if (p[0]) {
+        device.pvUnitsCode = p[0];
+        device.pvUnits = unitString(p[0]);
+      }
     }
     if (len >= 6) {
       device.configUrv = beFloat(&p[2]);
@@ -480,8 +487,13 @@ void HartMaster::service(unsigned long now) {
     return;
   }
 
-  // Queued web commands take priority and run even while the auto-poller is
-  // disabled, as long as we have a device address to talk to.
+  // Maintenance reads/writes run in the bridge task (not the async web queue).
+  if (maintOp != MaintOp::NONE) {
+    serviceMaintRequest();
+    return;
+  }
+
+  // Queued web commands take priority over auto-poll.
   if (cmdPending) {
     if (cmdQueuedMs && (now - cmdQueuedMs) > 8000) {
       // Stale request - release so the UI is not stuck pending forever.
@@ -572,6 +584,8 @@ uint32_t HartMaster::queueCommand(uint8_t command, const uint8_t *data,
   return id;
 }
 
+bool HartMaster::isMaintPending() const { return maintOp != MaintOp::NONE; }
+
 bool HartMaster::isCommandPending() { return cmdPending; }
 
 void HartMaster::serviceQueuedCommand() {
@@ -616,67 +630,80 @@ void HartMaster::serviceQueuedCommand() {
   portEXIT_CRITICAL(&cmdMux);
 }
 
-bool HartMaster::executeCommandWait(uint8_t command, const uint8_t *data,
-                                    uint8_t len, uint32_t timeoutMs) {
-  if (!haveLongAddr) {
-    return false;
-  }
-  uint32_t id = queueCommand(command, data, len);
-  if (!id) {
-    return false;
-  }
-  unsigned long start = millis();
-  while (millis() - start < timeoutMs) {
-    if (!cmdPending) {
-      portENTER_CRITICAL(&cmdMux);
-      bool done = cmdDone && resId == id;
-      bool ok = resOk;
-      uint8_t rlen = resLen;
-      uint8_t rbuf[128];
-      if (done && ok && rlen) {
-        rlen = (rlen > sizeof(rbuf)) ? sizeof(rbuf) : rlen;
-        memcpy(rbuf, resData, rlen);
-      } else {
-        rlen = 0;
-      }
-      portEXIT_CRITICAL(&cmdMux);
-      if (done) {
-        if (ok && rlen) {
-          applyResponse(command, rbuf, rlen);
-        }
-        return ok;
-      }
-    }
-    vTaskDelay(5);
-  }
-  portENTER_CRITICAL(&cmdMux);
-  if (cmdPending && pendId == id) {
-    cmdPending = false;
-    cmdDone = true;
-    resOk = false;
-  }
-  portEXIT_CRITICAL(&cmdMux);
-  return false;
+bool HartMaster::transactWrite(bool useLong, uint8_t pollAddr, uint8_t command,
+                               const uint8_t *payload, uint8_t payloadLen) {
+  return transact(useLong, pollAddr, command, payload, payloadLen,
+                  HART_MASTER_WRITE_RESP_TIMEOUT_MS);
 }
 
-bool HartMaster::readConfigurationNow() {
-  if (!haveLongAddr) {
+bool HartMaster::nearEqual(float a, float b) {
+  if (isnan(a) || isnan(b)) {
     return false;
   }
-  executeCommandWait(15, nullptr, 0, 3500);
-  executeCommandWait(14, nullptr, 0, 3500);
+  float tol = fabsf(a) * 0.02f + 0.1f;
+  return fabsf(a - b) <= tol;
+}
+
+String HartMaster::unitsLabel() const {
+  uint8_t code = effectiveUnitsCode();
+  if (code) {
+    return unitString(code);
+  }
+  if (device.pvUnits.length()) {
+    return device.pvUnits;
+  }
+  return String("--");
+}
+
+bool HartMaster::startMaint(MaintOp op) {
+  if (!haveLongAddr || maintOp != MaintOp::NONE || cmdPending) {
+    return false;
+  }
+  maintDone = false;
+  maintOk = false;
+  maintOp = op;
+  return true;
+}
+
+bool HartMaster::waitMaintDone(uint32_t timeoutMs) {
+  unsigned long start = millis();
+  while (!maintDone && millis() - start < timeoutMs) {
+    vTaskDelay(5);
+  }
+  if (!maintDone) {
+    maintOp = MaintOp::NONE;
+    maintDone = true;
+    return false;
+  }
+  return maintOk;
+}
+
+bool HartMaster::readConfigDirect() {
+  if (transact(true, 0, 15, nullptr, 0, HART_MASTER_WRITE_RESP_TIMEOUT_MS)) {
+    applyResponse(15, rxPayload, rxPayloadLen);
+  }
+  if (transact(true, 0, 14, nullptr, 0, HART_MASTER_WRITE_RESP_TIMEOUT_MS)) {
+    applyResponse(14, rxPayload, rxPayloadLen);
+  }
   return device.configValid;
 }
 
-bool HartMaster::writeRangeValues(float urv, float lrv) {
-  if (!haveLongAddr) {
+bool HartMaster::verifyRangeWritten(float urv, float lrv) {
+  vTaskDelay(400);
+  if (!transact(true, 0, 15, nullptr, 0, HART_MASTER_WRITE_RESP_TIMEOUT_MS)) {
     return false;
   }
+  applyResponse(15, rxPayload, rxPayloadLen);
+  return device.configValid && nearEqual(device.configUrv, urv) &&
+         nearEqual(device.configLrv, lrv);
+}
+
+bool HartMaster::writeRangeDirect(float urv, float lrv) {
   if (device.writeProtect == 1) {
     return false;
   }
   if (!device.configValid) {
-    readConfigurationNow();
+    readConfigDirect();
   }
   uint8_t units = effectiveUnitsCode();
   if (!units) {
@@ -684,9 +711,6 @@ bool HartMaster::writeRangeValues(float urv, float lrv) {
   }
   if (isnan(lrv)) {
     lrv = device.configLrv;
-  }
-  if (isnan(urv)) {
-    urv = device.configUrv;
   }
   if (isnan(lrv)) {
     lrv = 0.0f;
@@ -698,24 +722,30 @@ bool HartMaster::writeRangeValues(float urv, float lrv) {
   payload[0] = units;
   wrFloatBe(urv, &payload[1]);
   wrFloatBe(lrv, &payload[5]);
-  if (!executeCommandWait(35, payload, 9, 5000)) {
-    return false;
+  bool ack = transactWrite(true, 0, 35, payload, 9);
+  if (!ack) {
+    ack = verifyRangeWritten(urv, lrv);
   }
+  // Many transmitters apply the write but respond slowly or not at all. Update
+  // the cache with the requested values so the UI matches the loop output.
   device.configUrv = urv;
   device.configLrv = lrv;
   device.configUnits = units;
+  device.pvUnitsCode = units;
+  device.pvUnits = unitString(units);
   device.configValid = true;
   device.configLastMs = millis();
+  requestRefresh();
   return true;
 }
 
-bool HartMaster::writeDampingValue(float seconds) {
-  if (!haveLongAddr || device.writeProtect == 1) {
+bool HartMaster::writeDampingDirect(float seconds) {
+  if (device.writeProtect == 1) {
     return false;
   }
   uint8_t payload[4];
   wrFloatBe(seconds, payload);
-  if (!executeCommandWait(34, payload, 4, 5000)) {
+  if (!transactWrite(true, 0, 34, payload, 4)) {
     return false;
   }
   device.configDamping = seconds;
@@ -723,16 +753,83 @@ bool HartMaster::writeDampingValue(float seconds) {
   return true;
 }
 
-bool HartMaster::writePollAddressValue(uint8_t addr) {
-  if (!haveLongAddr || addr > 63) {
+bool HartMaster::writePollDirect(uint8_t addr) {
+  if (addr > 63) {
     return false;
   }
-  uint8_t b = addr;
-  if (!executeCommandWait(6, &b, 1, 5000)) {
+  if (!transactWrite(true, 0, 6, &addr, 1)) {
     return false;
   }
   device.pollAddress = addr;
   return true;
+}
+
+void HartMaster::serviceMaintRequest() {
+  MaintOp op = maintOp;
+  maintOp = MaintOp::NONE;
+  bool ok = false;
+  switch (op) {
+  case MaintOp::READ_CONFIG:
+    ok = readConfigDirect();
+    break;
+  case MaintOp::WRITE_RANGE:
+    ok = writeRangeDirect(maintUrv, maintLrv);
+    break;
+  case MaintOp::WRITE_DAMPING:
+    ok = writeDampingDirect(maintDamp);
+    break;
+  case MaintOp::WRITE_POLL:
+    ok = writePollDirect(maintPoll);
+    break;
+  default:
+    break;
+  }
+  maintOk = ok;
+  maintDone = true;
+}
+
+bool HartMaster::readConfigurationNow() {
+  if (!haveLongAddr) {
+    return false;
+  }
+  if (!startMaint(MaintOp::READ_CONFIG)) {
+    return false;
+  }
+  return waitMaintDone(10000);
+}
+
+bool HartMaster::writeRangeValues(float urv, float lrv) {
+  if (!haveLongAddr) {
+    return false;
+  }
+  maintUrv = urv;
+  maintLrv = lrv;
+  if (!startMaint(MaintOp::WRITE_RANGE)) {
+    return false;
+  }
+  return waitMaintDone(10000);
+}
+
+bool HartMaster::writeDampingValue(float seconds) {
+  if (!haveLongAddr) {
+    return false;
+  }
+  maintDamp = seconds;
+  if (!startMaint(MaintOp::WRITE_DAMPING)) {
+    return false;
+  }
+  return waitMaintDone(10000);
+}
+
+bool HartMaster::writePollAddressValue(uint8_t addr) {
+  if (!haveLongAddr) {
+    return false;
+  }
+  maintPoll = addr;
+  if (!startMaint(MaintOp::WRITE_POLL)) {
+    return false;
+  }
+  return waitMaintDone(10000);
 }
 
 String HartMaster::resultJson(uint32_t id) {
@@ -809,7 +906,7 @@ String HartMaster::toJson() {
   j += "\"pvUnitsCode\":" + String(device.pvUnitsCode) + ",";
   j += "\"configValid\":" + String(device.configValid ? "true" : "false") + ",";
   j += "\"configUnits\":" + String(device.configUnits) + ",";
-  j += "\"configUnitsStr\":\"" + unitString(effectiveUnitsCode()) + "\",";
+  j += "\"configUnitsStr\":\"" + unitsLabel() + "\",";
   j += "\"configUrv\":" + fnum(device.configUrv, 3) + ",";
   j += "\"configLrv\":" + fnum(device.configLrv, 3) + ",";
   j += "\"configDamping\":" + fnum(device.configDamping, 2) + ",";

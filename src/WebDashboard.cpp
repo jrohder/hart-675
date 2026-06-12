@@ -184,10 +184,15 @@ void WebDashboard::setupRoutes() {
       lrv = req->getParam("lrv", true)->value().toFloat();
     }
     bool ok = master->writeRangeValues(urv, lrv);
-    String msg = ok ? "Range updated" : "Write failed (check write protect / units)";
-    req->send(ok ? 200 : 503, "application/json",
-              String("{\"ok\":") + (ok ? "true" : "false") + ",\"message\":\"" +
-                  msg + "\"}");
+    if (ok) {
+      req->send(200, "application/json",
+                String("{\"ok\":true,\"message\":\"Range updated\",\"hart\":") +
+                    master->toJson() + "}");
+    } else {
+      req->send(503, "application/json",
+                "{\"ok\":false,\"message\":\"Write failed (check write "
+                "protect / units)\"}");
+    }
   });
 
   server.on("/api/hart/damping", HTTP_POST, [this](AsyncWebServerRequest *req) {
@@ -197,8 +202,12 @@ void WebDashboard::setupRoutes() {
     }
     float v = req->getParam("value", true)->value().toFloat();
     bool ok = master->writeDampingValue(v);
-    req->send(ok ? 200 : 503, "application/json",
-              String("{\"ok\":") + (ok ? "true" : "false") + "}");
+    if (ok) {
+      req->send(200, "application/json",
+                String("{\"ok\":true,\"hart\":") + master->toJson() + "}");
+    } else {
+      req->send(503, "application/json", "{\"ok\":false}");
+    }
   });
 
   server.on("/api/hart/polladdr", HTTP_POST, [this](AsyncWebServerRequest *req) {

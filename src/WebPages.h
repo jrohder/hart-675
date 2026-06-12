@@ -458,12 +458,21 @@ async function loadDevice(){
 //==================== HART MAINTENANCE ====================
 let cfgCache={units:0,urv:NaN,lrv:NaN,damp:NaN};
 
+function unitsLabel(d){
+  if(d.configUnitsStr && d.configUnitsStr!=='--') return d.configUnitsStr;
+  if(d.pvUnits && typeof d.pvUnits==='string' && !/^\d+$/.test(d.pvUnits)) return d.pvUnits;
+  const map={1:'inH2O',2:'inHg',3:'ftH2O',4:'mmH2O',5:'mH2O',6:'psi',7:'bar',8:'mbar',
+    9:'g/cm2',10:'kg/cm2',11:'Pa',12:'mmHg',16:'kPa',32:'degC',33:'degF',39:'mA',57:'%'};
+  const c=d.configUnits||d.pvUnitsCode;
+  return (c!=null && map[c])?map[c]:((c!=null && c!==0)?('unit '+c):'--');
+}
+
 function fillMaintFromDevice(d){
   if(d.configValid){
     cfgCache.units=d.configUnits||d.pvUnitsCode;
     cfgCache.urv=d.configUrv;cfgCache.lrv=d.configLrv;cfgCache.damp=d.configDamping;
   }
-  const units=d.configUnitsStr||d.pvUnits||'--';
+  const units=unitsLabel(d);
   const wp=d.writeProtect;
   $('cfgTbl').innerHTML=rowsHtml([
     ['Units',units],
@@ -528,6 +537,8 @@ async function writeRange(urv,lrv){
   const r=await fetch('/api/hart/range',{method:'POST',body});
   const j=await r.json();
   if(!j.ok)throw new Error(j.message||'write failed');
+  if(j.hart)fillMaintFromDevice(j.hart);
+  return j;
 }
 async function writeUrv(){
   const v=parseFloat($('inUrv').value);if(isNaN(v))return toast('Enter a value');
@@ -535,7 +546,8 @@ async function writeUrv(){
   if(!await confirmDialog('Change URV',[['Current',fmt(cur,3)],['New',v.toFixed(3)]]))return;
   try{
     const lrv=isNaN(cfgCache.lrv)?parseFloat($('inLrv').value):cfgCache.lrv;
-    await writeRange(v,lrv);toast('URV updated');await readConfig();
+    await writeRange(v,lrv);
+    toast('URV updated');
   }catch(e){toast('Failed: '+e.message);}
 }
 async function writeLrv(){
@@ -543,7 +555,8 @@ async function writeLrv(){
   if(!await confirmDialog('Change LRV',[['Current',fmt(cfgCache.lrv,3)],['New',v.toFixed(3)]]))return;
   try{
     const urv=isNaN(cfgCache.urv)?parseFloat($('inUrv').value):cfgCache.urv;
-    await writeRange(urv,v);toast('LRV updated');await readConfig();
+    await writeRange(urv,v);
+    toast('LRV updated');
   }catch(e){toast('Failed: '+e.message);}
 }
 async function writeDamping(){
@@ -552,7 +565,8 @@ async function writeDamping(){
   try{
     const r=await fetch('/api/hart/damping',{method:'POST',body:new URLSearchParams({value:String(v)})});
     const j=await r.json();if(!j.ok)throw new Error('write failed');
-    toast('Damping updated');await readConfig();
+    if(j.hart)fillMaintFromDevice(j.hart);
+    toast('Damping updated');
   }catch(e){toast('Failed: '+e.message);}
 }
 async function writePollAddr(){

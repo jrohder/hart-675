@@ -157,7 +157,7 @@ void bridgeTask(void *param) {
     }
 
     // ---- Autonomous HART master + queued commands ----
-    if (hartMaster.isCommandPending()) {
+    if (hartMaster.isCommandPending() || hartMaster.isMaintPending()) {
       // Web/maintenance commands always preempt passive USB idle forwarding.
       if (hart.isTransmitting()) {
         hart.endTransmit();
