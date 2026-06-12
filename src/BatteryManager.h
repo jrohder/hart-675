@@ -12,16 +12,18 @@ public:
 
   bool isLowBattery() const;
   bool isCriticalBattery() const;
-  uint8_t getPercentage() const;
-  float getVoltage() const;
+  uint8_t getPercentage() const { return percentage; }
+  float getVoltage() const { return voltage; }
+  const char *getHealth() const;
+  bool isConnected() const { return voltage >= 3.0f; }
 
 private:
   float voltage;
   uint8_t percentage;
-  unsigned long lastReadTime;
+  unsigned long lastReadMs;
 
-  void sampleBattery();
-  uint8_t voltageToPercentage(float volts) const;
+  void sample();
+  uint8_t voltageToPercent(float v) const;
 };
 
 #endif  // BATTERY_MANAGER_H

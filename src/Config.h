@@ -1,20 +1,25 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-// ==================== Firmware Version ====================
-#define FW_VERSION "1.0.0"
+#include <Arduino.h>
+
+// ==================== Firmware ====================
+#define FW_VERSION "3.0.1"
 #define FW_BUILD_DATE __DATE__
+
+// Set to 0 for production use with PACTware over USB: the single USB UART is
+// shared between debug text and HART data, so debug prints would corrupt the
+// HART byte stream. Leave 1 for bench testing (and when using WiFi/TCP only).
+#define DEBUG_SERIAL 1
 
 // ==================== RGB LED GPIO (Common Anode - Active LOW) ====================
 #define RGB_LED_RED 15
 #define RGB_LED_GREEN 33
 #define RGB_LED_BLUE 27
-#define RGB_LED_BRIGHTNESS 128  // ~50% PWM
 
 // ==================== HART Status LED GPIO (Common Anode - Active LOW) ====================
 #define HART_LED_RED 14
 #define HART_LED_GREEN 32
-#define HART_LED_BRIGHTNESS 128  // ~50% PWM
 
 // ==================== Button GPIO ====================
 #define BUTTON_PIN 13
@@ -22,90 +27,107 @@
 #define BUTTON_LONG_PRESS_MS 3000
 #define BUTTON_TRIPLE_PRESS_WINDOW_MS 500
 
-// ==================== Battery Monitor GPIO ====================
+// ==================== Battery Monitor ====================
 #define BATTERY_ADC_PIN 35
-#define BATTERY_ADC_CHANNEL ADC1_CHANNEL_7
 #define BATTERY_VOLTAGE_MAX 4.20f
 #define BATTERY_VOLTAGE_MIN 3.40f
-#define BATTERY_LOW_THRESHOLD 10
-#define BATTERY_CRITICAL_THRESHOLD 5
+#define BATTERY_LOW_THRESHOLD 10       // percent
+#define BATTERY_CRITICAL_THRESHOLD 5   // percent
 
-// ==================== AD5700-1 HART Modem GPIO ====================
-#define HART_UART_NUM UART_NUM_2
-#define HART_TX_PIN 17
-#define HART_RX_PIN 16
+// ==================== AD5700-1 HART Modem ====================
+// ESP32 UART2 <-> AD5700 (verified working wiring).
+// GPIO16 -> AD5700 RxD (modem data input, MCU transmits here)
+// GPIO17 <- AD5700 TxD (modem demodulated output, MCU receives here)
+#define HART_TX_PIN 16
+#define HART_RX_PIN 17
 #define HART_RTS_PIN 4
 #define HART_OCD_PIN 21
 #define HART_UART_BAUD 1200
-#define HART_UART_BITS 8
-#define HART_UART_STOP_BITS 1
-#define HART_UART_PARITY UART_PARITY_ODD
+#define HART_RX_BUFFER_SIZE 512
 
-// ==================== Bluetooth Settings ====================
-#define BT_DEVICE_NAME "wireless_hart_67"
-#define BT_PIN_CODE "0420"
+// AD5700 RTS controls TX/RX direction: RTS LOW = transmit, HIGH = receive.
+// If your AD5700 module inverts RTS, swap these two levels.
+#define HART_RTS_TX_LEVEL LOW
+#define HART_RTS_RX_LEVEL HIGH
+// Carrier detect (OCD/CD) asserted level. Flip to 0 if your module is active-low.
+#define HART_OCD_ACTIVE_HIGH 1
+// Settling time after keying the carrier before data is shifted out (ms).
+#define HART_TX_KEY_DELAY_MS 5
 
-// ==================== WiFi Settings ====================
-#define WIFI_AP_SSID "wireless_hart_67"
-#define WIFI_AP_PASSWORD "iande0315"
+// ==================== WiFi AP Defaults ====================
+#define DEFAULT_WIFI_SSID "wireless_hart_67"
+#define DEFAULT_WIFI_PASSWORD "iande0315"
 #define WIFI_AP_IP IPAddress(192, 168, 4, 1)
 #define WIFI_AP_GATEWAY IPAddress(192, 168, 4, 1)
 #define WIFI_AP_SUBNET IPAddress(255, 255, 255, 0)
-#define WIFI_AP_MAX_CONNECTIONS 1
-#define WIFI_MAX_CLIENTS 1
+#define WIFI_AP_MAX_CLIENTS 4
 
-// ==================== Web Server Settings ====================
+// ==================== TCP Serial Bridge ====================
+#define DEFAULT_TCP_PORT 5000
 #define WEB_SERVER_PORT 80
-#define WEB_DASHBOARD_REFRESH_MS 1000
-#define CLIENT_CHECK_INTERVAL_MS 1000
 
-// ==================== LED Indication Timings ====================
-#define LED_ALTERNATE_INTERVAL_MS 500
-#define LED_BATTERY_DISPLAY_MS 5000
-#define LED_LOW_BATTERY_FLASH_HZ 1
-#define LED_HART_ACTIVITY_PULSE_MS 100
+// ==================== Defaults (settings) ====================
+#define DEFAULT_DEVICE_NAME "wireless_hart_67"
+#define DEFAULT_AUTO_SLEEP_SEC 180     // 3 minutes
+#define DEFAULT_LED_BRIGHTNESS 50      // percent
+#define DEFAULT_DASH_REFRESH_MS 1000
 
-// ==================== Power Management ====================
-#define AUTO_SLEEP_TIMEOUT_MS (3 * 60 * 1000)  // 3 minutes
-#define MODEM_OWNERSHIP_TIMEOUT_MS 10000        // 10 seconds
-#define USB_ACTIVITY_TIMEOUT_MS 100
+// ==================== Ownership / Power ====================
+#define MODEM_OWNERSHIP_TIMEOUT_MS 10000  // 10 seconds
 
-// ==================== Dashboard Trending ====================
-#define TREND_BUFFER_SIZE 300  // 5 minutes at 1 sample/second
+// ==================== HART Master (auto poll) ====================
+#define DEFAULT_HART_MASTER_ENABLED 1     // auto-poll on boot
+#define DEFAULT_HART_POLL_ADDRESS 0       // single polling address to query
+#define HART_MASTER_PREAMBLE_COUNT 5      // 0xFF bytes before each request
+#define HART_MASTER_RESP_TIMEOUT_MS 400   // wait for first response byte
+#define HART_MASTER_INTERBYTE_MS 30       // end-of-frame gap (>1 char @1200)
+#define HART_MASTER_FIND_INTERVAL_MS 750  // retry cadence while searching
+#define HART_MASTER_POLL_INTERVAL_MS 1000 // device data refresh cadence
+#define HART_MASTER_MAX_FAILURES 5        // consecutive misses -> lost device
+
+// ==================== Trend / Logging ====================
+#define TREND_BUFFER_SIZE 300
 #define TREND_SAMPLE_INTERVAL_MS 1000
+#define SYSTEM_LOG_LINES 40
 
-// ==================== Mode Storage (NVS/Preferences) ====================
-#define PREF_NAMESPACE "hart67"
-#define PREF_KEY_LAST_MODE "lastMode"
-#define PREF_KEY_BOOT_COUNT "bootCount"
-#define PREF_KEY_UPTIME "uptime"
-#define PREF_KEY_HART_BYTES "hartBytes"
+// ==================== LED Timings ====================
+#define LED_BATTERY_DISPLAY_MS 5000
+#define LED_HART_PULSE_MS 80
+#define LED_BREATHE_PERIOD_MS 3000
+#define LED_SLOW_FLASH_MS 500
+#define LED_FAST_FLASH_MS 120
+#define LED_FW_FLASH_MS 250
 
-// ==================== Operating Modes ====================
-enum OperatingMode {
-  MODE_BLUETOOTH = 0,
-  MODE_WIFI = 1,
-  MODE_SLEEP = 2
-};
+// ==================== Preferences ====================
+#define PREF_NAMESPACE "whart67"
 
-// ==================== LED Colors ====================
+// ==================== Enums ====================
 enum LedColor {
   COLOR_OFF = 0,
-  COLOR_RED = 1,
-  COLOR_GREEN = 2,
-  COLOR_BLUE = 3,
-  COLOR_YELLOW = 4,    // Red + Green
-  COLOR_CYAN = 5,      // Green + Blue
-  COLOR_MAGENTA = 6,   // Red + Blue
-  COLOR_WHITE = 7      // Red + Green + Blue
+  COLOR_RED,
+  COLOR_GREEN,
+  COLOR_BLUE,
+  COLOR_YELLOW,
+  COLOR_CYAN,
+  COLOR_MAGENTA,
+  COLOR_WHITE
 };
 
-// ==================== Modem Ownership ====================
+// High-level RGB indication states (priority handled in main loop)
+enum LedState {
+  LED_STATE_IDLE = 0,    // breathing blue (no connections)
+  LED_STATE_USB,         // solid blue (USB active)
+  LED_STATE_TCP,         // solid green (TCP active)
+  LED_STATE_LOW_BATTERY, // slow red flash
+  LED_STATE_FW_UPDATE,   // yellow flash
+  LED_STATE_ERROR        // rapid red flash
+};
+
 enum ModemOwner {
   OWNER_NONE = 0,
-  OWNER_USB = 1,
-  OWNER_BLUETOOTH = 2,
-  OWNER_WIFI = 3
+  OWNER_USB,
+  OWNER_TCP,
+  OWNER_INTERNAL  // reserved for future internal HART master
 };
 
 #endif  // CONFIG_H

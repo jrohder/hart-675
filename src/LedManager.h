@@ -4,52 +4,44 @@
 #include <Arduino.h>
 #include "Config.h"
 
+// Drives the RGB pushbutton LED and the dual-color HART status LED via LEDC
+// PWM. Common-anode hardware (active LOW). All animation is millis-based.
 class LedManager {
 public:
   LedManager();
   void begin();
   void update();
+  void runSelfTest();
 
-  void setRgbColor(LedColor color);
-  void setRgbBrightness(uint8_t brightness);
-  void setRgbAlternating(LedColor color1, LedColor color2,
-                         unsigned long intervalMs);
-  void setRgbFlashing(LedColor color, unsigned long intervalMs);
-  void stopRgbAnimation();
+  // RGB indication
+  void setState(LedState state);
+  LedState getState() const { return state; }
+  void setBrightnessPercent(uint8_t pct);
+  void showBatteryStatus(uint8_t percentage);  // 5s override
+  bool isBatteryStatusShowing() const { return batteryOverride; }
 
-  void setHartColor(LedColor color);
-  void setHartBrightness(uint8_t brightness);
-  void setHartPulse();
-  void stopHartPulse();
-
-  void showBatteryStatus(uint8_t percentage);
-  void clearBatteryStatus();
-
-  bool isBatteryStatusShowing() const { return batteryStatusActive; }
-  bool isHartPulsing() const { return hartPulsing; }
+  // HART status LED
+  void setHartCarrier(bool carrier);
+  void pulseHart();
 
 private:
-  LedColor rgbCurrentColor;
-  uint8_t rgbBrightness;
-  unsigned long rgbAnimationInterval;
-  unsigned long rgbLastToggleTime;
-  LedColor rgbAnimColor1, rgbAnimColor2;
-  bool rgbAnimating;
-  bool rgbAlternating;
+  LedState state;
+  uint8_t brightnessPct;
 
-  LedColor hartCurrentColor;
-  uint8_t hartBrightness;
+  bool batteryOverride;
+  unsigned long batteryStart;
+
+  unsigned long animMark;
+  bool flashOn;
+
+  bool hartCarrier;
   bool hartPulsing;
-  unsigned long hartPulseStartTime;
+  unsigned long hartPulseStart;
 
-  bool batteryStatusActive;
-  unsigned long batteryStatusStartTime;
-
-  void setPin(uint8_t pin, bool active);
-  void updateRgb();
-  void updateHart();
-  void applyColor(uint8_t redPin, uint8_t greenPin, uint8_t bluePin,
-                  LedColor color, uint8_t brightness);
+  void applyRgb(uint8_t r, uint8_t g, uint8_t b);  // 0..255 ON intensities
+  void applyHart(bool red, bool green);
+  uint8_t scale(uint8_t intensity) const;
+  void renderState();
 };
 
 #endif  // LED_MANAGER_H

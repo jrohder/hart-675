@@ -1,66 +1,68 @@
 #include "BatteryManager.h"
 
 BatteryManager::BatteryManager()
-    : voltage(BATTERY_VOLTAGE_MAX),
-      percentage(100),
-      lastReadTime(0) {}
+    : voltage(BATTERY_VOLTAGE_MAX), percentage(100), lastReadMs(0) {}
 
 void BatteryManager::begin() {
   analogReadResolution(12);
   analogSetPinAttenuation(BATTERY_ADC_PIN, ADC_11db);
-  sampleBattery();
+  sample();
 }
 
 void BatteryManager::update() {
-  if (millis() - lastReadTime < 1000) {
+  if (millis() - lastReadMs < 1000) {
     return;
   }
-  sampleBattery();
+  sample();
+}
+
+void BatteryManager::sample() {
+  lastReadMs = millis();
+  // Average a few reads to reduce ADC noise.
+  uint32_t acc = 0;
+  for (int i = 0; i < 8; i++) {
+    acc += analogRead(BATTERY_ADC_PIN);
+  }
+  float raw = acc / 8.0f;
+  float measured = (raw / 4095.0f) * 3.3f;
+  voltage = measured * 2.0f;  // Feather built-in 2:1 divider on GPIO35
+  percentage = voltageToPercent(voltage);
+}
+
+uint8_t BatteryManager::voltageToPercent(float v) const {
+  if (v >= BATTERY_VOLTAGE_MAX) {
+    return 100;
+  }
+  if (v <= BATTERY_VOLTAGE_MIN) {
+    return 0;
+  }
+  float span = BATTERY_VOLTAGE_MAX - BATTERY_VOLTAGE_MIN;
+  return (uint8_t)(((v - BATTERY_VOLTAGE_MIN) / span) * 100.0f);
 }
 
 bool BatteryManager::isLowBattery() const {
+  if (!isConnected()) {
+    return false;
+  }
   return percentage <= BATTERY_LOW_THRESHOLD;
 }
 
 bool BatteryManager::isCriticalBattery() const {
+  if (!isConnected()) {
+    return false;
+  }
   return percentage <= BATTERY_CRITICAL_THRESHOLD;
 }
 
-uint8_t BatteryManager::getPercentage() const {
-  return percentage;
-}
-
-float BatteryManager::getVoltage() const {
-  return voltage;
-}
-
-void BatteryManager::sampleBattery() {
-  lastReadTime = millis();
-  int raw = analogRead(BATTERY_ADC_PIN);
-  float measured = (raw / 4095.0f) * 3.3f;
-
-  // Assume a 2:1 resistor divider for the battery voltage sensing circuit.
-  voltage = measured * 2.0f;
-
-  if (voltage > BATTERY_VOLTAGE_MAX) {
-    voltage = BATTERY_VOLTAGE_MAX;
+const char *BatteryManager::getHealth() const {
+  if (!isConnected()) {
+    return "USB Powered";
   }
-  if (voltage < BATTERY_VOLTAGE_MIN) {
-    voltage = BATTERY_VOLTAGE_MIN;
+  if (voltage >= 3.80f) {
+    return "Good";
   }
-
-  percentage = voltageToPercentage(voltage);
-}
-
-uint8_t BatteryManager::voltageToPercentage(float volts) const {
-  if (volts >= BATTERY_VOLTAGE_MAX) {
-    return 100;
+  if (voltage >= 3.55f) {
+    return "Fair";
   }
-  if (volts <= BATTERY_VOLTAGE_MIN) {
-    return 0;
-  }
-
-  float span = BATTERY_VOLTAGE_MAX - BATTERY_VOLTAGE_MIN;
-  float normalized = (volts - BATTERY_VOLTAGE_MIN) / span;
-  return static_cast<uint8_t>(normalized * 100.0f);
+  return "Low";
 }

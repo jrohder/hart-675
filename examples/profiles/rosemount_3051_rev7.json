@@ -1,0 +1,40 @@
+{
+  "manufacturer": "Rosemount",
+  "device": "3051",
+  "revision": 7,
+  "version": "1.0",
+  "author": "hart-67-profiler",
+  "match": { "manufacturerId": 38, "deviceType": 11 },
+  "pages": [
+    {
+      "title": "Pressure Config",
+      "widgets": [
+        { "type": "section", "label": "Range" },
+        { "type": "number", "label": "URV", "units": "inH2O",
+          "read": { "command": 15, "decode": "float", "offset": 3 },
+          "write": { "command": 35, "encode": "float" } },
+        { "type": "number", "label": "Damping", "units": "s",
+          "read": { "command": 15, "decode": "float", "offset": 11 },
+          "write": { "command": 34, "encode": "float" } },
+        { "type": "section", "label": "Transfer Function" },
+        { "type": "enum", "label": "Transfer Function",
+          "read": { "command": 15, "offset": 1 },
+          "write": { "command": 35 },
+          "options": [ { "v": 0, "t": "Linear" }, { "v": 1, "t": "Square Root" } ] }
+      ]
+    },
+    {
+      "title": "Diagnostics",
+      "widgets": [
+        { "type": "section", "label": "Sensor" },
+        { "type": "read", "label": "Sensor Temperature", "units": "C",
+          "read": { "command": 3, "decode": "float", "offset": 14 } },
+        { "type": "graph", "label": "PV Trend",
+          "read": { "command": 1, "decode": "float", "offset": 1 } },
+        { "type": "section", "label": "Maintenance" },
+        { "type": "button", "label": "Self Test", "command": 41, "confirm": true },
+        { "type": "button", "label": "Master Reset", "command": 42, "style": "danger", "confirm": true }
+      ]
+    }
+  ]
+}

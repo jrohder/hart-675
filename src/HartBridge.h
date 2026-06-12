@@ -4,43 +4,38 @@
 #include <Arduino.h>
 #include "Config.h"
 
-// Transparent UART bridge to the AD5700-1 HART modem.
-// Future HART command handlers can hook read()/write() without restructuring.
+// Transparent UART bridge to the AD5700-1 HART modem. No protocol parsing.
+//
+// HART is half-duplex: the AD5700 RTS line keys transmit vs. receive mode.
+// The bridge keeps RTS in RECEIVE while idle, asserts TRANSMIT around an
+// outgoing frame, flushes the UART, then returns to RECEIVE so the slave's
+// reply can be demodulated. Carrier detect is read from the OCD pin (only
+// meaningful while in receive mode).
 class HartBridge {
 public:
   HartBridge();
   void begin();
-  void update();
+  void updateCarrier();  // poll OCD pin (call from bridge task, RX mode)
 
-  void write(uint8_t byte);
+  // Half-duplex keying
+  void beginTransmit();  // assert carrier (RTS -> TX), settle
+  void endTransmit();    // flush UART, return to RX
+  bool isTransmitting() const { return transmitting; }
+
+  // Raw byte access
   int available();
-  uint8_t read();
+  int read();                          // -1 if none
+  size_t write(const uint8_t *data, size_t len);
+  size_t write(uint8_t b);
 
-  bool isCarrierDetected() const;
-  uint32_t getTxBytes() const { return txBytes; }
-  uint32_t getRxBytes() const { return rxBytes; }
-  uint32_t getTxPackets() const { return txPackets; }
-  uint32_t getRxPackets() const { return rxPackets; }
-  unsigned long getLastActivityMs() const { return lastActivityMs; }
-  bool hadActivitySince(unsigned long sinceMs) const;
+  bool isCarrierDetected() const { return carrier; }
+  int getOcdRaw() const { return digitalRead(HART_OCD_PIN); }
 
 private:
-  void noteTxByte();
-  void noteRxByte();
-
   HardwareSerial *uart;
-  bool carrierDetected;
-  unsigned long lastUpdateTime;
-
-  uint32_t txBytes;
-  uint32_t rxBytes;
-  uint32_t txPackets;
-  uint32_t rxPackets;
-  unsigned long lastActivityMs;
-  unsigned long lastTxByteMs;
-  unsigned long lastRxByteMs;
-
-  static const unsigned long kPacketIdleMs = 100;
+  bool carrier;
+  bool transmitting;
+  unsigned long lastCarrierPollMs;
 };
 
 #endif  // HART_BRIDGE_H
