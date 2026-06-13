@@ -384,23 +384,12 @@ void HartMaster::applyResponse(uint8_t cmd, const uint8_t *p, uint8_t len) {
       device.qv = beFloat(&p[20]);
     }
     break;
-  case 14:  // Transducer information (alternate range source)
-    if (len >= 4) {
+  case 14:  // Transducer info: units only (limits at p[4]/p[8] are sensor
+             // capability, NOT the configured range from Command 15/35).
+    if (len >= 4 && p[3] && !device.configUnits) {
       device.configUnits = p[3];
-      if (p[3]) {
-        device.pvUnitsCode = p[3];
-        device.pvUnits = unitString(p[3]);
-      }
-    }
-    if (len >= 8) {
-      device.configUrv = beFloat(&p[4]);
-    }
-    if (len >= 12) {
-      device.configLrv = beFloat(&p[8]);
-    }
-    if (len >= 12) {
-      device.configValid = true;
-      device.configLastMs = millis();
+      device.pvUnitsCode = p[3];
+      device.pvUnits = unitString(p[3]);
     }
     break;
   case 15:  // PV output information
@@ -463,8 +452,9 @@ void HartMaster::applyResponse(uint8_t cmd, const uint8_t *p, uint8_t len) {
 }
 
 bool HartMaster::pollDynamic() {
-  // Rotate through data commands. 15 + 14 cache range/damping for maintenance UI.
-  static const uint8_t seq[] = {3, 2, 15, 14, 3, 13, 3, 20, 3, 12, 3, 0};
+  // Cmd 15 = configured range (URV/LRV/damping). Do not poll cmd 14 here;
+  // its limits are transducer capability (-10..110 etc.), not loop range.
+  static const uint8_t seq[] = {3, 2, 15, 3, 13, 3, 20, 3, 12, 3, 0};
   uint8_t cmd = seq[pollStep % (sizeof(seq) / sizeof(seq[0]))];
   pollStep++;
 
@@ -540,7 +530,7 @@ void HartMaster::service(unsigned long now) {
 
     if (pollDynamic()) {
       consecutiveFailures = 0;
-      if (refreshBurst && pollStep >= 5) {
+      if (refreshBurst && pollStep >= 4) {
         refreshBurst = false;
       }
     } else {
@@ -682,7 +672,9 @@ bool HartMaster::readConfigDirect() {
   if (transact(true, 0, 15, nullptr, 0, HART_MASTER_WRITE_RESP_TIMEOUT_MS)) {
     applyResponse(15, rxPayload, rxPayloadLen);
   }
-  if (transact(true, 0, 14, nullptr, 0, HART_MASTER_WRITE_RESP_TIMEOUT_MS)) {
+  // Cmd 14 only as a units fallback when Command 15 did not return units.
+  if (!device.configUnits &&
+      transact(true, 0, 14, nullptr, 0, HART_MASTER_WRITE_RESP_TIMEOUT_MS)) {
     applyResponse(14, rxPayload, rxPayloadLen);
   }
   return device.configValid;
