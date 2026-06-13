@@ -55,6 +55,11 @@ public:
     uint8_t writeProtect = 255;  // 0=off, 1=on, 255=unknown
     bool configValid = false;
     unsigned long configLastMs = 0;
+    // Last range successfully written via Command 35 (used when cmd 15 readback
+    // is zero on level/radar devices that don't populate standard range fields).
+    float lastWrittenUrv = NAN;
+    float lastWrittenLrv = NAN;
+    bool hasWrittenRange = false;
     uint8_t responseCode = 0;
     uint8_t deviceStatus = 0;
     unsigned long lastCommMs = 0;
@@ -160,6 +165,8 @@ private:
   uint8_t effectiveUnitsCode() const;
   String unitsLabel() const;
   static bool nearEqual(float a, float b);
+  static bool isZeroRange(float urv, float lrv);
+  void mergeConfigRangeFromWritten();
 
   // Bridge-task maintenance slot (web handler waits on maintDone).
   volatile MaintOp maintOp;

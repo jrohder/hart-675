@@ -128,16 +128,16 @@ String HartMaster::unitString(uint8_t code) {
   case 37: return "Ohm";
   case 38: return "Hz";
   case 39: return "mA";
-  case 40: return "gal/s";
-  case 41: return "L/s";
-  case 42: return "Impgal/s";
-  case 43: return "Impgal/min";
-  case 44: return "L/min";
-  case 45: return "gal/min";
-  case 46: return "ft/s";
-  case 47: return "m/s";
-  case 48: return "ft/min";
-  case 49: return "m/min";
+  case 40: return "ft";
+  case 41: return "m";
+  case 42: return "mm";
+  case 43: return "cm";
+  case 44: return "in";
+  case 45: return "gal";
+  case 46: return "L";
+  case 47: return "Impgal";
+  case 48: return "cu ft";
+  case 49: return "cu m";
   case 57: return "%";
   case 58: return "mA";
   case 59: return "L/h";
@@ -161,13 +161,28 @@ void HartMaster::wrFloatBe(float f, uint8_t *out) {
 }
 
 uint8_t HartMaster::effectiveUnitsCode() const {
-  if (device.configUnits) {
-    return device.configUnits;
-  }
+  // PV units from cmd 1/3 reflect the live measurement (level, flow, etc.).
   if (device.pvUnitsCode) {
     return device.pvUnitsCode;
   }
+  if (device.configUnits) {
+    return device.configUnits;
+  }
   return 0;
+}
+
+bool HartMaster::isZeroRange(float urv, float lrv) {
+  return (isnan(urv) || nearEqual(urv, 0.0f)) &&
+         (isnan(lrv) || nearEqual(lrv, 0.0f));
+}
+
+void HartMaster::mergeConfigRangeFromWritten() {
+  if (isZeroRange(device.configUrv, device.configLrv) && device.hasWrittenRange) {
+    device.configUrv = device.lastWrittenUrv;
+    device.configLrv = device.lastWrittenLrv;
+    device.configValid = true;
+    device.configLastMs = millis();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -388,23 +403,28 @@ void HartMaster::applyResponse(uint8_t cmd, const uint8_t *p, uint8_t len) {
              // capability, NOT the configured range from Command 15/35).
     if (len >= 4 && p[3] && !device.configUnits) {
       device.configUnits = p[3];
-      device.pvUnitsCode = p[3];
-      device.pvUnits = unitString(p[3]);
+      if (!device.pvUnitsCode) {
+        device.pvUnitsCode = p[3];
+        device.pvUnits = unitString(p[3]);
+      }
     }
     break;
-  case 15:  // PV output information
+  case 15:  // PV output information (configured loop range)
     if (len >= 1) {
       device.configUnits = p[0];
-      if (p[0]) {
+      // Cmd 15 unit code is often wrong on level/radar; keep PV units from cmd 3.
+      if (!device.pvUnitsCode && p[0]) {
         device.pvUnitsCode = p[0];
         device.pvUnits = unitString(p[0]);
       }
     }
-    if (len >= 6) {
-      device.configUrv = beFloat(&p[2]);
-    }
     if (len >= 10) {
-      device.configLrv = beFloat(&p[6]);
+      float urv = beFloat(&p[2]);
+      float lrv = beFloat(&p[6]);
+      if (!isZeroRange(urv, lrv)) {
+        device.configUrv = urv;
+        device.configLrv = lrv;
+      }
     }
     if (len >= 14) {
       device.configDamping = beFloat(&p[10]);
@@ -412,10 +432,11 @@ void HartMaster::applyResponse(uint8_t cmd, const uint8_t *p, uint8_t len) {
     if (len >= 15) {
       device.writeProtect = p[14];
     }
-    if (len >= 14) {
+    if (len >= 14 && !isZeroRange(device.configUrv, device.configLrv)) {
       device.configValid = true;
       device.configLastMs = millis();
     }
+    mergeConfigRangeFromWritten();
     break;
   case 12:
     if (len >= 24) {
@@ -677,7 +698,8 @@ bool HartMaster::readConfigDirect() {
       transact(true, 0, 14, nullptr, 0, HART_MASTER_WRITE_RESP_TIMEOUT_MS)) {
     applyResponse(14, rxPayload, rxPayloadLen);
   }
-  return device.configValid;
+  mergeConfigRangeFromWritten();
+  return device.configValid || device.hasWrittenRange;
 }
 
 bool HartMaster::verifyRangeWritten(float urv, float lrv) {
@@ -723,8 +745,13 @@ bool HartMaster::writeRangeDirect(float urv, float lrv) {
   device.configUrv = urv;
   device.configLrv = lrv;
   device.configUnits = units;
-  device.pvUnitsCode = units;
-  device.pvUnits = unitString(units);
+  device.lastWrittenUrv = urv;
+  device.lastWrittenLrv = lrv;
+  device.hasWrittenRange = true;
+  if (!device.pvUnitsCode) {
+    device.pvUnitsCode = units;
+    device.pvUnits = unitString(units);
+  }
   device.configValid = true;
   device.configLastMs = millis();
   requestRefresh();

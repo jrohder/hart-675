@@ -459,31 +459,33 @@ async function loadDevice(){
 let cfgCache={units:0,urv:NaN,lrv:NaN,damp:NaN};
 
 function unitsLabel(d){
+  if(d.pvUnits && typeof d.pvUnits==='string' && d.pvUnits.length && !/^\d+$/.test(d.pvUnits)) return d.pvUnits;
   if(d.configUnitsStr && d.configUnitsStr!=='--') return d.configUnitsStr;
-  if(d.pvUnits && typeof d.pvUnits==='string' && !/^\d+$/.test(d.pvUnits)) return d.pvUnits;
   const map={1:'inH2O',2:'inHg',3:'ftH2O',4:'mmH2O',5:'mH2O',6:'psi',7:'bar',8:'mbar',
-    9:'g/cm2',10:'kg/cm2',11:'Pa',12:'mmHg',16:'kPa',32:'degC',33:'degF',39:'mA',57:'%'};
-  const c=d.configUnits||d.pvUnitsCode;
+    9:'g/cm2',10:'kg/cm2',11:'Pa',12:'mmHg',16:'kPa',32:'degC',33:'degF',39:'mA',40:'ft',
+    41:'m',42:'mm',43:'cm',44:'in',57:'%'};
+  const c=d.pvUnitsCode||d.configUnits;
   return (c!=null && map[c])?map[c]:((c!=null && c!==0)?('unit '+c):'--');
 }
 
 function fillMaintFromDevice(d){
-  if(d.configValid){
-    cfgCache.units=d.configUnits||d.pvUnitsCode;
+  const hasRange=d.configValid && !(Math.abs(d.configUrv||0)<0.0001 && Math.abs(d.configLrv||0)<0.0001);
+  if(hasRange){
+    cfgCache.units=d.pvUnitsCode||d.configUnits;
     cfgCache.urv=d.configUrv;cfgCache.lrv=d.configLrv;cfgCache.damp=d.configDamping;
   }
   const units=unitsLabel(d);
   const wp=d.writeProtect;
   $('cfgTbl').innerHTML=rowsHtml([
     ['Units',units],
-    ['URV',d.configValid?fmt(d.configUrv,3)+' '+units:'--'],
-    ['LRV',d.configValid?fmt(d.configLrv,3)+' '+units:'--'],
+    ['URV',hasRange?fmt(d.configUrv,3)+' '+units:'--'],
+    ['LRV',hasRange?fmt(d.configLrv,3)+' '+units:'--'],
     ['Damping (s)',d.configValid?fmt(d.configDamping,2):'--'],
     ['Write Protect',wp===0?'No':(wp===1?'Yes':'--')],
     ['Poll Address',d.pollAddress],
     ['Config age',d.configValid?(d.configAgeMs+' ms ago'):'not read yet']
   ]);
-  if(d.configValid){
+  if(hasRange){
     $('inUrv').value=isNaN(d.configUrv)?'':Number(d.configUrv).toFixed(3);
     $('inLrv').value=isNaN(d.configLrv)?'':Number(d.configLrv).toFixed(3);
     $('inDamp').value=isNaN(d.configDamping)?'':Number(d.configDamping).toFixed(2);

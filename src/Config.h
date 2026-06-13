@@ -4,7 +4,7 @@
 #include <Arduino.h>
 
 // ==================== Firmware ====================
-#define FW_VERSION "3.0.4"
+#define FW_VERSION "3.0.5"
 #define FW_BUILD_DATE __DATE__
 
 // Set to 0 for production use with PACTware over USB: the single USB UART is
@@ -29,7 +29,7 @@
 
 // ==================== Battery Monitor ====================
 #define BATTERY_ADC_PIN 35
-#define BATTERY_VOLTAGE_MAX 4.20f
+#define BATTERY_VOLTAGE_MAX 3.90f   // 100% at observed LiPo ceiling on this pack
 #define BATTERY_VOLTAGE_MIN 3.40f
 #define BATTERY_LOW_THRESHOLD 10       // percent
 #define BATTERY_CRITICAL_THRESHOLD 5   // percent
