@@ -60,6 +60,7 @@ public:
     float lastWrittenUrv = NAN;
     float lastWrittenLrv = NAN;
     bool hasWrittenRange = false;
+    String configRangeSource;  // "cmd15", "cmd149", "written"
     uint8_t responseCode = 0;
     uint8_t deviceStatus = 0;
     unsigned long lastCommMs = 0;
@@ -166,7 +167,12 @@ private:
   String unitsLabel() const;
   static bool nearEqual(float a, float b);
   static bool isZeroRange(float urv, float lrv);
+  static bool isLevelUnitCode(uint8_t code);
+  static bool parseCmd15Range(const uint8_t *p, uint8_t len, uint8_t universalRev,
+                              uint8_t &units, float &urv, float &lrv,
+                              float &damping, uint8_t &writeProtect);
   void mergeConfigRangeFromWritten();
+  bool readRosemountRangeVia149();
 
   // Bridge-task maintenance slot (web handler waits on maintDone).
   volatile MaintOp maintOp;

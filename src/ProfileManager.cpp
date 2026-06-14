@@ -16,7 +16,7 @@ static const char GENERIC_JSON[] PROGMEM = R"JSON({
   "device":"HART Device",
   "revision":0,
   "version":"1.0",
-  "author":"Wireless HART 67",
+  "author":"Hart Communicator 675",
   "match":{"manufacturerId":0,"deviceType":0},
   "pages":[]
 })JSON";

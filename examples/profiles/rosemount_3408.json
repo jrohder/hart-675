@@ -1,0 +1,26 @@
+{
+  "manufacturer": "Emerson",
+  "device": "Rosemount 3408",
+  "revision": 7,
+  "version": "1.0",
+  "author": "Hart Communicator 675",
+  "match": { "manufacturerId": 38, "deviceType": 25275 },
+  "pages": [
+    {
+      "title": "Level Range",
+      "widgets": [
+        { "type": "section", "label": "Configured range (HART cmd 149)" },
+        { "type": "number", "label": "URV", "units": "level",
+          "read": { "command": 149, "decode": "float", "offset": 5 },
+          "write": { "command": 35, "encode": "float" } },
+        { "type": "number", "label": "LRV", "units": "level",
+          "read": { "command": 149, "decode": "float", "offset": 11 },
+          "write": { "command": 35, "encode": "float" } },
+        { "type": "read", "label": "Primary Variable", "units": "",
+          "read": { "command": 1, "decode": "float", "offset": 1 } },
+        { "type": "read", "label": "Loop Current", "units": "mA",
+          "read": { "command": 2, "decode": "float", "offset": 0 } }
+      ]
+    }
+  ]
+}

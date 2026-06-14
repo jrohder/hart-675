@@ -5,7 +5,7 @@
 #include <FS.h>
 #include <LittleFS.h>
 
-// Manages Wireless HART Profile Format (WHPF) JSON files stored in LittleFS
+// Manages Hart Communicator Profile Format (WHPF) JSON files stored in LittleFS
 // under /profiles. A profile describes manufacturer-specific pages and widgets
 // that the web UI renders dynamically. The firmware never hardcodes device
 // behaviour - it only renders what a profile requests.

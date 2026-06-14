@@ -277,7 +277,7 @@ void setup() {
   systemStatus.begin(wakeReasonString(), boots);
   profiles.begin();
 
-  DBG("\n\n=== Wireless HART 67 (Rev 3) ===");
+  DBG("\n\n=== " PRODUCT_NAME_FULL " (Rev 3) ===");
   DBGF("Firmware: %s  Build: %s\n", FW_VERSION, FW_BUILD_DATE);
   DBGF("Wake: %s  Boot#: %u\n", wakeReasonString().c_str(), boots);
 

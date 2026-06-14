@@ -176,13 +176,220 @@ bool HartMaster::isZeroRange(float urv, float lrv) {
          (isnan(lrv) || nearEqual(lrv, 0.0f));
 }
 
+bool HartMaster::isLevelUnitCode(uint8_t code) {
+  return code >= 40 && code <= 44;  // ft, m, mm, cm, in
+}
+
+static bool isLikelyUnitCode(uint8_t code) {
+  return code > 0 && code <= 57 && code != 250 && code != 251;
+}
+
+static bool cmd15ExtendedLayout(const uint8_t *p, uint8_t len,
+                                uint8_t universalRev) {
+  if (len >= 17) {
+    return true;
+  }
+  if (universalRev >= 5 && len >= 16) {
+    return true;
+  }
+  if (len < 11) {
+    return false;
+  }
+  // Legacy responses start with the unit code; HART 5/7 prefix alarm + transfer fn.
+  if (isLikelyUnitCode(p[0]) && p[1] > 1 && p[1] != 239 && p[1] != 250) {
+    return false;
+  }
+  if ((p[0] == 0 || p[0] == 1 || p[0] == 239 || p[0] == 250) && p[1] <= 1 &&
+      isLikelyUnitCode(p[2])) {
+    return true;
+  }
+  if (len <= 14 && isLikelyUnitCode(p[0])) {
+    return false;
+  }
+  return universalRev >= 5;
+}
+
+static bool nearZeroVal(float v) {
+  return isnan(v) || fabsf(v) < 0.0001f;
+}
+
+static float cmd15RangeScore(uint8_t units, float urv, float lrv) {
+  if (isnan(urv) || isnan(lrv)) {
+    return 0.0f;
+  }
+  if (nearZeroVal(urv) && nearZeroVal(lrv)) {
+    return 0.0f;
+  }
+  float score = 1.0f;
+  if (fabsf(urv - lrv) > 0.001f) {
+    score += 1.0f;
+  }
+  if (units >= 40 && units <= 44 && urv >= lrv) {
+    score += 2.0f;
+  }
+  return score;
+}
+
+bool HartMaster::parseCmd15Range(const uint8_t *p, uint8_t len,
+                                 uint8_t universalRev, uint8_t &units,
+                                 float &urv, float &lrv, float &damping,
+                                 uint8_t &writeProtect) {
+  units = 0;
+  urv = NAN;
+  lrv = NAN;
+  damping = NAN;
+  writeProtect = 255;
+
+  auto parseExtended = [&](uint8_t &u, float &hi, float &lo, float &damp,
+                           uint8_t &wp) {
+    if (len < 11) {
+      return;
+    }
+    u = p[2];
+    hi = beFloat(&p[3]);
+    lo = beFloat(&p[7]);
+    if (len >= 15) {
+      damp = beFloat(&p[11]);
+    }
+    if (len >= 16) {
+      wp = p[15];
+    }
+  };
+
+  auto parseLegacy = [&](uint8_t &u, float &hi, float &lo, float &damp,
+                         uint8_t &wp) {
+    if (len < 9) {
+      return;
+    }
+    u = p[0];
+    hi = beFloat(&p[1]);
+    lo = beFloat(&p[5]);
+    if (len >= 13) {
+      damp = beFloat(&p[9]);
+    }
+    if (len >= 14) {
+      wp = p[13];
+    }
+  };
+
+  uint8_t uExt = 0, uLeg = 0, wpExt = 255, wpLeg = 255;
+  float urvExt = NAN, lrvExt = NAN, urvLeg = NAN, lrvLeg = NAN;
+  float dampExt = NAN, dampLeg = NAN;
+  parseExtended(uExt, urvExt, lrvExt, dampExt, wpExt);
+  parseLegacy(uLeg, urvLeg, lrvLeg, dampLeg, wpLeg);
+
+  bool useExtended = cmd15ExtendedLayout(p, len, universalRev);
+  float scoreExt = useExtended ? cmd15RangeScore(uExt, urvExt, lrvExt) + 0.5f
+                               : cmd15RangeScore(uExt, urvExt, lrvExt);
+  float scoreLeg = !useExtended ? cmd15RangeScore(uLeg, urvLeg, lrvLeg) + 0.5f
+                               : cmd15RangeScore(uLeg, urvLeg, lrvLeg);
+
+  if (scoreExt >= scoreLeg && scoreExt > 0.0f) {
+    units = uExt;
+    urv = urvExt;
+    lrv = lrvExt;
+    damping = dampExt;
+    writeProtect = wpExt;
+  } else if (scoreLeg > 0.0f) {
+    units = uLeg;
+    urv = urvLeg;
+    lrv = lrvLeg;
+    damping = dampLeg;
+    writeProtect = wpLeg;
+  } else if (useExtended) {
+    units = uExt;
+    urv = urvExt;
+    lrv = lrvExt;
+    damping = dampExt;
+    writeProtect = wpExt;
+  } else {
+    units = uLeg;
+    urv = urvLeg;
+    lrv = lrvLeg;
+    damping = dampLeg;
+    writeProtect = wpLeg;
+  }
+
+  // Level/radar devices sometimes return span with URV < LRV; normalize for display.
+  if (isLevelUnitCode(units) && !isZeroRange(urv, lrv) && urv < lrv) {
+    float tmp = urv;
+    urv = lrv;
+    lrv = tmp;
+  }
+  return !isZeroRange(urv, lrv) || units != 0;
+}
+
 void HartMaster::mergeConfigRangeFromWritten() {
   if (isZeroRange(device.configUrv, device.configLrv) && device.hasWrittenRange) {
     device.configUrv = device.lastWrittenUrv;
     device.configLrv = device.lastWrittenLrv;
     device.configValid = true;
     device.configLastMs = millis();
+    device.configRangeSource = "written";
   }
+}
+
+static bool parseCmd149RangePair(const uint8_t *p, uint8_t len, uint16_t upperId,
+                                 uint16_t lowerId, float &urv, float &lrv) {
+  if (len < 11 || p[2] < 1) {
+    return false;
+  }
+  urv = NAN;
+  lrv = NAN;
+  int off = 3;
+  for (int i = 0; i < p[2] && off + 6 <= len; i++) {
+    uint16_t id = ((uint16_t)p[off] << 8) | p[off + 1];
+    off += 2;
+    float val = HartMaster::beFloat(&p[off]);
+    off += 4;
+    if (id == upperId) {
+      urv = val;
+    }
+    if (id == lowerId) {
+      lrv = val;
+    }
+  }
+  return !isnan(urv) && !isnan(lrv) &&
+         !(nearZeroVal(urv) && nearZeroVal(lrv));
+}
+
+bool HartMaster::readRosemountRangeVia149() {
+  // Rosemount tank radar (3408 etc.): universal cmd 15 often returns distance
+  // output scaling (e.g. 0..98 in), not the level URV/LRV shown in Radar Master.
+  // Cmd 149 reads the parameter table (PID_UPPER_RANGE / PID_LOWER_RANGE).
+  static const struct {
+    uint16_t upperId;
+    uint16_t lowerId;
+  } kSets[] = {
+      {0x1C9F, 0x1CA1},  // PID_UPPER_RANGE / PID_LOWER_RANGE
+      {0x1C38, 0x1C10},  // FAE_LEVEL_PV_UPPER / LOWER range limits
+  };
+  for (size_t s = 0; s < sizeof(kSets) / sizeof(kSets[0]); s++) {
+    uint8_t req[7];
+    req[0] = 0;
+    req[1] = 1;  // transaction id
+    req[2] = 2;
+    req[3] = (uint8_t)(kSets[s].upperId >> 8);
+    req[4] = (uint8_t)(kSets[s].upperId & 0xFF);
+    req[5] = (uint8_t)(kSets[s].lowerId >> 8);
+    req[6] = (uint8_t)(kSets[s].lowerId & 0xFF);
+    if (!transact(true, 0, 149, req, 7, HART_MASTER_WRITE_RESP_TIMEOUT_MS)) {
+      continue;
+    }
+    float urv = NAN;
+    float lrv = NAN;
+    if (!parseCmd149RangePair(rxPayload, rxPayloadLen, kSets[s].upperId,
+                              kSets[s].lowerId, urv, lrv)) {
+      continue;
+    }
+    device.configUrv = urv;
+    device.configLrv = lrv;
+    device.configValid = true;
+    device.configLastMs = millis();
+    device.configRangeSource = "cmd149";
+    return true;
+  }
+  return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -343,7 +550,11 @@ bool HartMaster::doCommand0(bool useLong, uint8_t pollAddr) {
   const uint8_t *p = rxPayload;
   // p[0] = 254 (expansion). p[1..2] = expanded device type. p[9..11] = dev id.
   device.deviceType = ((uint16_t)p[1] << 8) | p[2];
-  device.manufacturerId = p[1];
+  if (rxPayloadLen >= 19) {
+    device.manufacturerId = ((uint16_t)p[17] << 8) | p[18];
+  } else {
+    device.manufacturerId = 0;
+  }
   device.universalRev = p[4];
   device.deviceRevision = p[5];
   device.softwareRevision = p[6];
@@ -409,35 +620,34 @@ void HartMaster::applyResponse(uint8_t cmd, const uint8_t *p, uint8_t len) {
       }
     }
     break;
-  case 15:  // PV output information (configured loop range)
-    if (len >= 1) {
-      device.configUnits = p[0];
-      // Cmd 15 unit code is often wrong on level/radar; keep PV units from cmd 3.
-      if (!device.pvUnitsCode && p[0]) {
-        device.pvUnitsCode = p[0];
-        device.pvUnits = unitString(p[0]);
-      }
+  case 15: {  // PV output information (configured loop range)
+    uint8_t units = 0;
+    float urv = NAN;
+    float lrv = NAN;
+    float damping = NAN;
+    uint8_t wp = 255;
+    parseCmd15Range(p, len, device.universalRev, units, urv, lrv, damping, wp);
+    if (units) {
+      device.configUnits = units;
     }
-    if (len >= 10) {
-      float urv = beFloat(&p[2]);
-      float lrv = beFloat(&p[6]);
-      if (!isZeroRange(urv, lrv)) {
-        device.configUrv = urv;
-        device.configLrv = lrv;
-      }
+    if (!isZeroRange(urv, lrv)) {
+      device.configUrv = urv;
+      device.configLrv = lrv;
     }
-    if (len >= 14) {
-      device.configDamping = beFloat(&p[10]);
+    if (!isnan(damping)) {
+      device.configDamping = damping;
     }
-    if (len >= 15) {
-      device.writeProtect = p[14];
+    if (wp != 255) {
+      device.writeProtect = wp;
     }
-    if (len >= 14 && !isZeroRange(device.configUrv, device.configLrv)) {
+    if (!isZeroRange(device.configUrv, device.configLrv)) {
       device.configValid = true;
       device.configLastMs = millis();
+      device.configRangeSource = "cmd15";
     }
     mergeConfigRangeFromWritten();
     break;
+  }
   case 12:
     if (len >= 24) {
       device.message = unpackAscii(&p[0], 24);
@@ -693,7 +903,10 @@ bool HartMaster::readConfigDirect() {
   if (transact(true, 0, 15, nullptr, 0, HART_MASTER_WRITE_RESP_TIMEOUT_MS)) {
     applyResponse(15, rxPayload, rxPayloadLen);
   }
-  // Cmd 14 only as a units fallback when Command 15 did not return units.
+  // Rosemount 3408 (0x62BB): cmd 15 is distance/output span; read real range via cmd 149.
+  if (device.deviceType == 0x62BB) {
+    readRosemountRangeVia149();
+  }
   if (!device.configUnits &&
       transact(true, 0, 14, nullptr, 0, HART_MASTER_WRITE_RESP_TIMEOUT_MS)) {
     applyResponse(14, rxPayload, rxPayloadLen);
@@ -748,6 +961,7 @@ bool HartMaster::writeRangeDirect(float urv, float lrv) {
   device.lastWrittenUrv = urv;
   device.lastWrittenLrv = lrv;
   device.hasWrittenRange = true;
+  device.configRangeSource = "written";
   if (!device.pvUnitsCode) {
     device.pvUnitsCode = units;
     device.pvUnits = unitString(units);
@@ -928,6 +1142,7 @@ String HartMaster::toJson() {
   j += "\"configUnitsStr\":\"" + unitsLabel() + "\",";
   j += "\"configUrv\":" + fnum(device.configUrv, 3) + ",";
   j += "\"configLrv\":" + fnum(device.configLrv, 3) + ",";
+  j += "\"configRangeSource\":\"" + device.configRangeSource + "\",";
   j += "\"configDamping\":" + fnum(device.configDamping, 2) + ",";
   j += "\"writeProtect\":" + String(device.writeProtect) + ",";
   j += "\"configAgeMs\":" +

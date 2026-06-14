@@ -7,7 +7,7 @@
 // switches sections; an always-on top bar shows USB/TCP/HART/battery status.
 // Static pages (HART Device, HART Maintenance, System Diagnostics, System
 // Configuration, Profiles) always exist. Manufacturer-specific pages are
-// generated dynamically from the active Wireless HART Profile (WHPF) JSON.
+// generated dynamically from the active Hart Communicator Profile (WHPF) JSON.
 // No external CDN / libraries.
 static const char INDEX_HTML[] PROGMEM = R"HTML(
 <!DOCTYPE html>
@@ -15,7 +15,7 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>Wireless HART 67</title>
+<title>Hart 675</title>
 <style>
   :root{
     --bg:#0e1116; --panel:#161b22; --panel2:#1c2530; --line:#2a3441;
@@ -135,7 +135,7 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
 
 <div class="topbar">
   <button class="ham" id="ham">&#9776;</button>
-  <span class="tbrand">Wireless HART 67</span>
+  <span class="tbrand">Hart 675</span>
   <div class="tbstatus">
     <span class="chip"><span class="dot" id="tUsb"></span>USB</span>
     <span class="chip"><span class="dot" id="tTcp"></span>TCP</span>
@@ -288,7 +288,7 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
     </div>
     <div class="card">
       <h3>Upload Profile</h3>
-      <div class="sub">Select a Wireless HART Profile (.json) from your phone.</div>
+      <div class="sub">Select a Hart Communicator profile (.json) from your phone.</div>
       <input type="file" id="profFile" accept=".json,application/json">
       <button class="btn" onclick="uploadProfile()">Upload</button>
     </div>
@@ -483,8 +483,12 @@ function fillMaintFromDevice(d){
     ['Damping (s)',d.configValid?fmt(d.configDamping,2):'--'],
     ['Write Protect',wp===0?'No':(wp===1?'Yes':'--')],
     ['Poll Address',d.pollAddress],
-    ['Config age',d.configValid?(d.configAgeMs+' ms ago'):'not read yet']
+    ['Config age',d.configValid?(d.configAgeMs+' ms ago'):'not read yet'],
+    ['Range source',d.configRangeSource||'--']
   ]);
+  if(d.configRangeSource==='cmd15'&&d.deviceType===0x62bb){
+    $('cfgTbl').innerHTML+='<div class="mut" style="margin-top:8px">Cmd 15 on this radar is distance/output span. v3.0.8+ also reads cmd 149 for configured level range.</div>';
+  }
   if(hasRange){
     $('inUrv').value=isNaN(d.configUrv)?'':Number(d.configUrv).toFixed(3);
     $('inLrv').value=isNaN(d.configLrv)?'':Number(d.configLrv).toFixed(3);
