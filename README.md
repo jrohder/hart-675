@@ -1,4 +1,4 @@
-# Wireless HART 67 Communicator (V2)
+# HART 675 Communicator (V3)
 
 ESP32-based portable HART communicator. **WiFi-first** architecture: USB wired
 operation plus a WiFi TCP virtual-COM bridge and an industrial single-page web
