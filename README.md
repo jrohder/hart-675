@@ -78,6 +78,8 @@ WiFi/TCP use is unaffected by this setting.
 | Button | 13 |
 | Battery ADC | 35 |
 | AD5700 OCD / RTS / TXD / RXD | 21 / 4 / 16 / 17 |
+| AD5700 power control | 25 |
+| Internal 250 ohm HART resistor enable | 26 |
 
 ## Button Gestures
 

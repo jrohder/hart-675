@@ -14,8 +14,17 @@
 class HartBridge {
 public:
   HartBridge();
+  void beginHardwareControl();
   void begin();
+  void shutdownForSleep();
   void updateCarrier();  // poll OCD pin (call from bridge task, RX mode)
+
+  // Rev 3 hardware controls. The internal resistor is runtime-only and must
+  // not be persisted across reset or deep sleep.
+  void setModemPower(bool enabled);
+  bool isModemPowered() const { return modemPowered; }
+  void setInternalResistor(bool enabled);
+  bool isInternalResistorEnabled() const { return resistorEnabled; }
 
   // Half-duplex keying
   void beginTransmit();  // assert carrier (RTS -> TX), settle
@@ -35,7 +44,14 @@ private:
   HardwareSerial *uart;
   bool carrier;
   bool transmitting;
+  bool hardwareControlReady;
+  bool modemPowered;
+  bool resistorEnabled;
+  bool uartStarted;
+  unsigned long modemPowerOnMs;
   unsigned long lastCarrierPollMs;
+
+  void waitForModemStartup();
 };
 
 #endif  // HART_BRIDGE_H

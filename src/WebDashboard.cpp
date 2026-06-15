@@ -91,6 +91,12 @@ String WebDashboard::buildStatusJson() {
   j += "\"cpuUsage\":" + String(systemStatus.getCpuUsage()) + ",";
   j += "\"bootCount\":" + String(systemStatus.getBootCount()) + ",";
   j += "\"wakeReason\":\"" + systemStatus.getWakeReason() + "\",";
+  j += "\"ad5700Powered\":" + String(hart->isModemPowered() ? "true" : "false") + ",";
+  j += "\"internalResistorEnabled\":" +
+       String(hart->isInternalResistorEnabled() ? "true" : "false") + ",";
+  j += "\"wifiConnected\":" + String(WiFi.getMode() != WIFI_OFF ? "true" : "false") + ",";
+  j += "\"sleepTimerActive\":" +
+       String(settings->getAutoSleepSec() > 0 ? "true" : "false") + ",";
   j += "\"lastError\":\"" + systemStatus.getLastError() + "\"";
   j += "}";
   return j;
@@ -103,6 +109,24 @@ void WebDashboard::setupRoutes() {
 
   server.on("/api/status", HTTP_GET, [this](AsyncWebServerRequest *req) {
     req->send(200, "application/json", buildStatusJson());
+  });
+
+  server.on("/api/hart/hardware", HTTP_POST, [this](AsyncWebServerRequest *req) {
+    if (req->hasParam("internalResistor", true)) {
+      String v = req->getParam("internalResistor", true)->value();
+      bool enabled = (v == "1" || v.equalsIgnoreCase("true") ||
+                      v.equalsIgnoreCase("on"));
+      hart->setInternalResistor(enabled);
+      systemStatus.log(String("[HART HW] Internal 250 ohm resistor ") +
+                       (enabled ? "enabled" : "disabled"));
+    }
+
+    String resp = "{\"ok\":true,\"ad5700Powered\":";
+    resp += hart->isModemPowered() ? "true" : "false";
+    resp += ",\"internalResistorEnabled\":";
+    resp += hart->isInternalResistorEnabled() ? "true" : "false";
+    resp += "}";
+    req->send(200, "application/json", resp);
   });
 
   server.on("/api/settings", HTTP_GET, [this](AsyncWebServerRequest *req) {

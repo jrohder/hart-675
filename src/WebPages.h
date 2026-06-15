@@ -47,6 +47,8 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
   .pill.online{background:rgba(63,185,80,.18);color:var(--green)}
   .pill.searching{background:rgba(210,153,34,.18);color:var(--yellow)}
   .pill.off{background:rgba(139,152,165,.15);color:var(--muted)}
+  .pill.reson{background:rgba(210,153,34,.22);color:var(--yellow)}
+  .pill.hidden{display:none}
 
   /* ---- Drawer ---- */
   .backdrop{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:40;
@@ -140,6 +142,7 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
     <span class="chip"><span class="dot" id="tUsb"></span>USB</span>
     <span class="chip"><span class="dot" id="tTcp"></span>TCP</span>
     <span class="pill off" id="tHart">--</span>
+    <span class="pill off hidden" id="tRes">250R OFF</span>
     <span class="chip"><span id="tBatt">--%</span></span>
   </div>
 </div>
@@ -259,6 +262,17 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
         <span class="v"><input type="checkbox" id="cfgMaster" style="width:auto" onchange="toggleMaster()"></span></div>
       <label class="fl">HART Polling Address (0-63)</label>
       <input id="cfgPoll" type="number" min="0" max="63">
+    </div>
+    <div class="card">
+      <h3>HART Hardware</h3>
+      <div id="hartHwTbl"></div>
+      <label class="fl">Internal 250&#937; HART Resistor</label>
+      <div class="row"><span class="k">OFF</span>
+        <span class="v"><input type="radio" name="cfgResistor" id="cfgResOff" style="width:auto" onchange="setInternalResistor(false)" checked></span></div>
+      <div class="row"><span class="k">ON</span>
+        <span class="v"><input type="radio" name="cfgResistor" id="cfgResOn" style="width:auto" onchange="setInternalResistor(true)"></span></div>
+      <button class="btn warn" id="cfgResBtn" onclick="toggleInternalResistor()">Enable Internal Resistor</button>
+      <div class="sub" style="margin-top:10px;margin-bottom:0">This control is manual only and resets to OFF after reboot or deep sleep.</div>
     </div>
     <div class="card">
       <h3>Device / Network</h3>
@@ -408,9 +422,13 @@ async function loadStatus(){
     $('tTcp').className='dot'+(s.tcpClient?' on':'');
     const hp=$('tHart');hp.textContent=s.hartMaster;hp.className='pill '+s.hartMaster;
     const b=s.batteryPercent;$('tBatt').textContent=(b>=0?b:'--')+'%';
+    const tr=$('tRes');
+    if(s.internalResistorEnabled){tr.textContent='250R ON';tr.className='pill reson';}
+    else{tr.textContent='250R OFF';tr.className='pill off hidden';}
     window._status=s;
     if(curPage==='diag')fillDiag(s);
     if(curPage==='monitor')fillMonStatus(s);
+    if(curPage==='config')fillHartHardware(s);
   }catch(e){}
 }
 
@@ -617,6 +635,8 @@ async function deviceReset(){
 function fillMonStatus(s){
   $('monTbl').innerHTML=rowsHtml([
     ['Carrier',s.carrier?'<span class=ok>Detected</span>':'<span class=mut>None</span>'],
+    ['AD5700 Power',s.ad5700Powered?'<span class=ok>ON</span>':'<span class=bad>OFF</span>'],
+    ['Internal 250R Resistor',s.internalResistorEnabled?'<span class=ok>ON</span>':'<span class=mut>OFF</span>'],
     ['OCD raw',s.ocdRaw],['Transmitting',s.transmitting?'Yes':'No'],
     ['Modem Owner',s.owner],['TX bytes',s.txBytes],['RX bytes',s.rxBytes]
   ]);
@@ -632,10 +652,16 @@ async function loadMonitor(){
 //==================== DIAGNOSTICS ====================
 function fillDiag(s){
   $('diagTbl').innerHTML=rowsHtml([
-    ['Firmware',s.fwVersion],['Battery',fmt(s.batteryVoltage,2)+' V ('+s.batteryPercent+'%)'],
-    ['Battery Health',s.batteryHealth],['USB',s.usbActive?'Connected':'No'],
-    ['TCP Client',s.tcpClient?'Connected':'No'],['WiFi Clients',s.wifiClients],
-    ['HART Owner',s.owner],['HART Carrier',s.carrier?'Yes':'No'],
+    ['Battery',s.batteryPercent+'%'],
+    ['AD5700',s.ad5700Powered?'Powered':'Off'],
+    ['Internal Resistor',s.internalResistorEnabled?'Enabled':'Disabled'],
+    ['HART Carrier',s.carrier?'Detected':'None'],
+    ['USB',s.usbActive?'Connected':'No'],
+    ['WiFi',s.wifiConnected?'Connected':'Off'],
+    ['Sleep Timer',s.sleepTimerActive?'Active':'Off'],
+    ['Firmware',s.fwVersion],['Battery Voltage',fmt(s.batteryVoltage,2)+' V'],
+    ['Battery Health',s.batteryHealth],['TCP Client',s.tcpClient?'Connected':'No'],
+    ['WiFi Clients',s.wifiClients],['HART Owner',s.owner],
     ['Free Heap',(s.freeHeap/1024).toFixed(1)+' KB'],['CPU Usage',s.cpuUsage+'%'],
     ['Uptime',s.uptime+' s'],['Boot Count',s.bootCount],['Wake Reason',s.wakeReason],
     ['TX Packets',s.txPackets],['RX Packets',s.rxPackets],['UART Errors',s.uartErrors],
@@ -677,11 +703,35 @@ async function loadSettings(){
     $('cfgRefresh').value=s.dashRefreshMs;$('cfgPoll').value=s.hartPollAddress;
     $('cfgMaster').checked=!!s.masterEnabled;
   }catch(e){}
+  try{fillHartHardware(window._status||await(await fetch('/api/status')).json());}catch(e){}
 }
 async function toggleMaster(){
   const en=$('cfgMaster').checked;
   await fetch('/api/master',{method:'POST',body:new URLSearchParams({enabled:en?1:0})});
   toast('HART master '+(en?'enabled':'disabled'));
+}
+function fillHartHardware(s){
+  if(!s||!$('hartHwTbl'))return;
+  const res=!!s.internalResistorEnabled;
+  $('hartHwTbl').innerHTML=rowsHtml([
+    ['AD5700 Power',s.ad5700Powered?'<span class=ok>ON</span>':'<span class=bad>OFF</span>'],
+    ['Internal 250R Resistor',res?'<span class=ok>ON</span>':'<span class=mut>OFF</span>']
+  ]);
+  $('cfgResOn').checked=res;$('cfgResOff').checked=!res;
+  $('cfgResBtn').textContent=res?'Disable Internal Resistor':'Enable Internal Resistor';
+}
+async function setInternalResistor(en){
+  try{
+    await fetch('/api/hart/hardware',{method:'POST',
+      body:new URLSearchParams({internalResistor:en?1:0})});
+    const s=await(await fetch('/api/status')).json();window._status=s;
+    fillHartHardware(s);loadStatus();
+    toast('Internal resistor '+(s.internalResistorEnabled?'enabled':'disabled'));
+  }catch(e){toast('Hardware control failed');}
+}
+async function toggleInternalResistor(){
+  const en=!(window._status&&window._status.internalResistorEnabled);
+  await setInternalResistor(en);
 }
 async function saveConfig(){
   const body=new URLSearchParams({deviceName:$('cfgName').value,ssid:$('cfgSsid').value,

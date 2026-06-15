@@ -4,7 +4,7 @@
 #include <Arduino.h>
 
 // ==================== Firmware ====================
-#define FW_VERSION "3.0.4"
+#define FW_VERSION "3.1.0"
 #define FW_BUILD_DATE __DATE__
 
 // Set to 0 for production use with PACTware over USB: the single USB UART is
@@ -44,6 +44,16 @@
 #define HART_OCD_PIN 21
 #define HART_UART_BAUD 1200
 #define HART_RX_BUFFER_SIZE 512
+
+// Rev 3 hardware controls. Both switches are P-channel high-side circuits,
+// so the default board wiring enables them by driving the gate LOW.
+#define HART_AD5700_POWER_PIN 25
+#define HART_INTERNAL_RESISTOR_PIN 26
+#define HART_AD5700_POWER_ON_LEVEL LOW
+#define HART_AD5700_POWER_OFF_LEVEL HIGH
+#define HART_INTERNAL_RESISTOR_ON_LEVEL LOW
+#define HART_INTERNAL_RESISTOR_OFF_LEVEL HIGH
+#define HART_MODEM_STARTUP_DELAY_MS 150
 
 // AD5700 RTS controls TX/RX direction: RTS LOW = transmit, HIGH = receive.
 // If your AD5700 module inverts RTS, swap these two levels.
