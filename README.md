@@ -91,7 +91,7 @@ WiFi/TCP use is unaffected by this setting.
 
 RGB: solid blue (USB active), solid green (TCP active), breathing blue (idle),
 slow red flash (low battery), yellow flash (firmware update), rapid red flash (error).
-HART LED: solid red (no carrier), solid green (carrier), green flash (traffic).
+HART LED: red flash on transmit, green flash on received HART data.
 
 ## Software Modules
 

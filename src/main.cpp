@@ -109,6 +109,7 @@ void bridgeTask(void *param) {
         if (!hart.isTransmitting()) {
           hart.beginTransmit();
           systemStatus.incTxPacket();
+          led.pulseHartTx();
         }
         hart.write(buf, n);
         hartMonitor.capture(HartMonitor::DIR_TX, buf, n);
@@ -128,6 +129,7 @@ void bridgeTask(void *param) {
         if (!hart.isTransmitting()) {
           hart.beginTransmit();
           systemStatus.incTxPacket();
+          led.pulseHartTx();
         }
         hart.write(buf, n);
         hartMonitor.capture(HartMonitor::DIR_TX, buf, n);
@@ -157,7 +159,7 @@ void bridgeTask(void *param) {
         Serial.write(buf, n);
         tcp.write(buf, n);
         hartMonitor.capture(HartMonitor::DIR_RX, buf, n);
-        led.pulseHart();
+        led.pulseHartRx();
         didWork = true;
       }
     }
@@ -169,7 +171,15 @@ void bridgeTask(void *param) {
         hart.endTransmit();
       }
       if (systemStatus.requestOwnership(OWNER_INTERNAL)) {
+        uint32_t txBefore = hartMaster.getTxFrames();
+        uint32_t rxBefore = hartMaster.getRxFrames();
         hartMaster.service(now);
+        if (hartMaster.getTxFrames() != txBefore) {
+          led.pulseHartTx();
+        }
+        if (hartMaster.getRxFrames() != rxBefore) {
+          led.pulseHartRx();
+        }
         didWork = true;
       }
     } else if (hartMaster.isEnabled() && !hart.isTransmitting()) {
@@ -181,10 +191,14 @@ void bridgeTask(void *param) {
       if (externalBusy) {
         systemStatus.releaseOwnership(OWNER_INTERNAL);
       } else if (systemStatus.requestOwnership(OWNER_INTERNAL)) {
+        uint32_t txBefore = hartMaster.getTxFrames();
         uint32_t rxBefore = hartMaster.getRxFrames();
         hartMaster.service(now);
+        if (hartMaster.getTxFrames() != txBefore) {
+          led.pulseHartTx();
+        }
         if (hartMaster.getRxFrames() != rxBefore) {
-          led.pulseHart();
+          led.pulseHartRx();
         }
         didWork = true;
       }
@@ -227,7 +241,6 @@ void handleButton() {
 
 void updateLed() {
   if (led.isBatteryStatusShowing()) {
-    led.setHartCarrier(systemStatus.getCarrier());
     return;
   }
 
@@ -244,7 +257,6 @@ void updateLed() {
     led.setState(LED_STATE_IDLE);
   }
 
-  led.setHartCarrier(systemStatus.getCarrier());
 }
 
 void checkAutoSleep() {

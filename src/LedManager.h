@@ -21,8 +21,8 @@ public:
   bool isBatteryStatusShowing() const { return batteryOverride; }
 
   // HART status LED
-  void setHartCarrier(bool carrier);
-  void pulseHart();
+  void pulseHartTx();
+  void pulseHartRx();
 
 private:
   LedState state;
@@ -34,8 +34,8 @@ private:
   unsigned long animMark;
   bool flashOn;
 
-  bool hartCarrier;
   bool hartPulsing;
+  bool hartPulseRed;
   unsigned long hartPulseStart;
 
   void applyRgb(uint8_t r, uint8_t g, uint8_t b);  // 0..255 ON intensities
