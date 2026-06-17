@@ -11,7 +11,7 @@
 LedManager::LedManager()
     : state(LED_STATE_IDLE), brightnessPct(DEFAULT_LED_BRIGHTNESS),
       batteryOverride(false), batteryStart(0), animMark(0), flashOn(false),
-      hartCarrier(false), hartPulsing(false), hartPulseStart(0) {}
+      hartPulsing(false), hartPulseRed(false), hartPulseStart(0) {}
 
 void LedManager::begin() {
   ledcSetup(CH_RGB_R, 5000, 8);
@@ -86,10 +86,15 @@ void LedManager::showBatteryStatus(uint8_t percentage) {
   applyRgb(r, g, b);
 }
 
-void LedManager::setHartCarrier(bool carrier) { hartCarrier = carrier; }
-
-void LedManager::pulseHart() {
+void LedManager::pulseHartTx() {
   hartPulsing = true;
+  hartPulseRed = true;
+  hartPulseStart = millis();
+}
+
+void LedManager::pulseHartRx() {
+  hartPulsing = true;
+  hartPulseRed = false;
   hartPulseStart = millis();
 }
 
@@ -106,14 +111,14 @@ void LedManager::update() {
     renderState();
   }
 
-  // HART LED: pulse green briefly on traffic, otherwise carrier color.
+  // HART LED: red pulse on transmit, green pulse on received HART data.
   if (hartPulsing) {
-    applyHart(false, true);
+    applyHart(hartPulseRed, !hartPulseRed);
     if (now - hartPulseStart >= LED_HART_PULSE_MS) {
       hartPulsing = false;
     }
   } else {
-    applyHart(!hartCarrier, hartCarrier);
+    applyHart(false, false);
   }
 }
 

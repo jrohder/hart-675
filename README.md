@@ -78,6 +78,8 @@ WiFi/TCP use is unaffected by this setting.
 | Button | 13 |
 | Battery ADC | 35 |
 | AD5700 OCD / RTS / TXD / RXD | 21 / 4 / 16 / 17 |
+| AD5700 power control | 25 |
+| Internal 250 ohm HART resistor enable | 26 |
 
 ## Button Gestures
 
@@ -89,7 +91,7 @@ WiFi/TCP use is unaffected by this setting.
 
 RGB: solid blue (USB active), solid green (TCP active), breathing blue (idle),
 slow red flash (low battery), yellow flash (firmware update), rapid red flash (error).
-HART LED: solid red (no carrier), solid green (carrier), green flash (traffic).
+HART LED: red flash on transmit, green flash on received HART data.
 
 ## Software Modules
 

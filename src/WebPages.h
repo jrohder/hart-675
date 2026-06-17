@@ -261,6 +261,10 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
       <input id="cfgPoll" type="number" min="0" max="63">
     </div>
     <div class="card">
+      <h3>HART Hardware</h3>
+      <div id="hartHwTbl"></div>
+    </div>
+    <div class="card">
       <h3>Device / Network</h3>
       <label class="fl">Device Name</label><input id="cfgName">
       <label class="fl">WiFi SSID</label><input id="cfgSsid">
@@ -411,6 +415,7 @@ async function loadStatus(){
     window._status=s;
     if(curPage==='diag')fillDiag(s);
     if(curPage==='monitor')fillMonStatus(s);
+    if(curPage==='config')fillHartHardware(s);
   }catch(e){}
 }
 
@@ -617,6 +622,7 @@ async function deviceReset(){
 function fillMonStatus(s){
   $('monTbl').innerHTML=rowsHtml([
     ['Carrier',s.carrier?'<span class=ok>Detected</span>':'<span class=mut>None</span>'],
+    ['AD5700 Power',s.ad5700Powered?'<span class=ok>ON</span>':'<span class=bad>OFF</span>'],
     ['OCD raw',s.ocdRaw],['Transmitting',s.transmitting?'Yes':'No'],
     ['Modem Owner',s.owner],['TX bytes',s.txBytes],['RX bytes',s.rxBytes]
   ]);
@@ -632,10 +638,15 @@ async function loadMonitor(){
 //==================== DIAGNOSTICS ====================
 function fillDiag(s){
   $('diagTbl').innerHTML=rowsHtml([
-    ['Firmware',s.fwVersion],['Battery',fmt(s.batteryVoltage,2)+' V ('+s.batteryPercent+'%)'],
-    ['Battery Health',s.batteryHealth],['USB',s.usbActive?'Connected':'No'],
-    ['TCP Client',s.tcpClient?'Connected':'No'],['WiFi Clients',s.wifiClients],
-    ['HART Owner',s.owner],['HART Carrier',s.carrier?'Yes':'No'],
+    ['Battery',s.batteryPercent+'%'],
+    ['AD5700',s.ad5700Powered?'Powered':'Off'],
+    ['HART Carrier',s.carrier?'Detected':'None'],
+    ['USB',s.usbActive?'Connected':'No'],
+    ['WiFi',s.wifiConnected?'Connected':'Off'],
+    ['Sleep Timer',s.sleepTimerActive?'Active':'Off'],
+    ['Firmware',s.fwVersion],['Battery Voltage',fmt(s.batteryVoltage,2)+' V'],
+    ['Battery Health',s.batteryHealth],['TCP Client',s.tcpClient?'Connected':'No'],
+    ['WiFi Clients',s.wifiClients],['HART Owner',s.owner],
     ['Free Heap',(s.freeHeap/1024).toFixed(1)+' KB'],['CPU Usage',s.cpuUsage+'%'],
     ['Uptime',s.uptime+' s'],['Boot Count',s.bootCount],['Wake Reason',s.wakeReason],
     ['TX Packets',s.txPackets],['RX Packets',s.rxPackets],['UART Errors',s.uartErrors],
@@ -677,11 +688,18 @@ async function loadSettings(){
     $('cfgRefresh').value=s.dashRefreshMs;$('cfgPoll').value=s.hartPollAddress;
     $('cfgMaster').checked=!!s.masterEnabled;
   }catch(e){}
+  try{fillHartHardware(window._status||await(await fetch('/api/status')).json());}catch(e){}
 }
 async function toggleMaster(){
   const en=$('cfgMaster').checked;
   await fetch('/api/master',{method:'POST',body:new URLSearchParams({enabled:en?1:0})});
   toast('HART master '+(en?'enabled':'disabled'));
+}
+function fillHartHardware(s){
+  if(!s||!$('hartHwTbl'))return;
+  $('hartHwTbl').innerHTML=rowsHtml([
+    ['AD5700 Power',s.ad5700Powered?'<span class=ok>ON</span>':'<span class=bad>OFF</span>']
+  ]);
 }
 async function saveConfig(){
   const body=new URLSearchParams({deviceName:$('cfgName').value,ssid:$('cfgSsid').value,
