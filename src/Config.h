@@ -8,7 +8,7 @@
 #define PRODUCT_NAME_SHORT "Hart 675"
 
 // ==================== Firmware ====================
-#define FW_VERSION "3.1.0"
+#define FW_VERSION "3.3.0"
 #define FW_BUILD_DATE __DATE__
 
 // Set to 0 for production use with PACTware over USB: the single USB UART is
@@ -101,7 +101,10 @@
 #define HART_MASTER_MAX_FAILURES 5        // consecutive misses -> lost device
 
 // ==================== Trend / Logging ====================
-#define TREND_BUFFER_SIZE 300
+// Rolling history for the diagnostics/trend graphs. 600 samples @ 1 Hz = 10 min
+// of history (~7 KB RAM across the five buffers); within the 500-2000 design
+// range while keeping the trend JSON response heap-friendly.
+#define TREND_BUFFER_SIZE 600
 #define TREND_SAMPLE_INTERVAL_MS 1000
 #define SYSTEM_LOG_LINES 40
 

@@ -37,6 +37,9 @@ public:
 
   bool hasActiveProfile() const { return activeIsCustom; }
   const String &activeFilename() const { return activeFile; }
+  // How the active profile was selected: "exact", "type", "lower", "higher",
+  // "family", or "none" (generic). Surfaced to the Profiles UI.
+  const String &matchQuality() const { return matchKind; }
   // Active profile JSON (the matched custom profile, or generic.json).
   String activeProfileJson();
   // Small status object for the Profiles page header.
@@ -50,6 +53,7 @@ private:
   bool mounted;
   bool activeIsCustom;
   String activeFile;          // e.g. "rosemount_3051_rev7.json" or "generic.json"
+  String matchKind;           // "exact"/"type"/"lower"/"higher"/"family"/"none"
   File uploadFile;
   bool uploading;
 
