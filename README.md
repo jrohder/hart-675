@@ -1,6 +1,6 @@
-# HART 675 Communicator (V3)
+# Hart Communicator 675
 
-ESP32-based portable HART communicator. **WiFi-first** architecture: USB wired
+ESP32-based portable HART communicator (**Hart 675**). **WiFi-first** architecture: USB wired
 operation plus a WiFi TCP virtual-COM bridge and an industrial single-page web
 dashboard. Bluetooth has been removed in V2.
 
@@ -25,7 +25,7 @@ dashboard. Bluetooth has been removed in V2.
 
 ## HART Spec
 
-- HART 8O1 (1200 baud, 8 data bits, odd parity, 1 stop bit)
+- HART 8O1 (1200 baud, 8 data bits, odd parity, 1 stop byte)
 - Transparent bridge (no protocol parsing in V2)
 
 ## Communication Modes
@@ -38,7 +38,7 @@ dashboard. Bluetooth has been removed in V2.
 
 ## WiFi Access Point
 
-- SSID: `wireless_hart_67`
+- SSID: `hart_675` (default)
 - Password: `iande0315`
 - Static IP: `192.168.4.1`
 - TCP bridge port: `5000`
@@ -65,7 +65,7 @@ WiFi/TCP use is unaffected by this setting.
 
 ## Using the TCP Virtual COM Bridge
 
-1. Connect your PC/phone to WiFi `wireless_hart_67` (password `iande0315`).
+1. Connect your PC/phone to WiFi `hart_675` (password `iande0315`).
 2. In your virtual serial port software (e.g. HW VSP3), create a COM port mapped to `192.168.4.1:5000`.
 3. Point PACTware (or any HART tool) at that virtual COM port.
 
@@ -118,7 +118,7 @@ handling is isolated from the web stack.
 
 ## Firmware Version
 
-v2.0.0 — WiFi-first, USB + TCP transparent modem with SPA dashboard.
+See `FW_VERSION` in `src/Config.h`.
 
 ## License
 
