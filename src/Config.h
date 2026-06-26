@@ -4,8 +4,12 @@
 #include <Arduino.h>
 
 // ==================== Firmware ====================
-#define FW_VERSION "3.1.0"
+#define FW_VERSION "3.3.0"
 #define FW_BUILD_DATE __DATE__
+
+// ==================== Product Identity ====================
+#define PRODUCT_NAME_FULL  "Hart Communicator 675"
+#define PRODUCT_NAME_SHORT "Hart 675"
 
 // Set to 0 for production use with PACTware over USB: the single USB UART is
 // shared between debug text and HART data, so debug prints would corrupt the
@@ -29,8 +33,8 @@
 
 // ==================== Battery Monitor ====================
 #define BATTERY_ADC_PIN 35
-#define BATTERY_VOLTAGE_MAX 4.20f
-#define BATTERY_VOLTAGE_MIN 3.40f
+#define BATTERY_VOLTAGE_MAX 3.90f
+#define BATTERY_VOLTAGE_MIN 2.40f
 #define BATTERY_LOW_THRESHOLD 10       // percent
 #define BATTERY_CRITICAL_THRESHOLD 5   // percent
 
@@ -65,7 +69,7 @@
 #define HART_TX_KEY_DELAY_MS 5
 
 // ==================== WiFi AP Defaults ====================
-#define DEFAULT_WIFI_SSID "wireless_hart_67"
+#define DEFAULT_WIFI_SSID "hart_675"
 #define DEFAULT_WIFI_PASSWORD "iande0315"
 #define WIFI_AP_IP IPAddress(192, 168, 4, 1)
 #define WIFI_AP_GATEWAY IPAddress(192, 168, 4, 1)
@@ -77,7 +81,7 @@
 #define WEB_SERVER_PORT 80
 
 // ==================== Defaults (settings) ====================
-#define DEFAULT_DEVICE_NAME "wireless_hart_67"
+#define DEFAULT_DEVICE_NAME "Hart 675"
 #define DEFAULT_AUTO_SLEEP_SEC 180     // 3 minutes
 #define DEFAULT_LED_BRIGHTNESS 50      // percent
 #define DEFAULT_DASH_REFRESH_MS 1000
@@ -97,7 +101,10 @@
 #define HART_MASTER_MAX_FAILURES 5        // consecutive misses -> lost device
 
 // ==================== Trend / Logging ====================
-#define TREND_BUFFER_SIZE 300
+// Rolling history for the diagnostics/trend graphs. 600 samples @ 1 Hz = 10 min
+// of history (~7 KB RAM across the five buffers); within the 500-2000 design
+// range while keeping the trend JSON response heap-friendly.
+#define TREND_BUFFER_SIZE 600
 #define TREND_SAMPLE_INTERVAL_MS 1000
 #define SYSTEM_LOG_LINES 40
 
@@ -110,7 +117,7 @@
 #define LED_FW_FLASH_MS 250
 
 // ==================== Preferences ====================
-#define PREF_NAMESPACE "whart67"
+#define PREF_NAMESPACE "hart675"
 
 // ==================== Enums ====================
 enum LedColor {

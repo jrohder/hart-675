@@ -15,7 +15,7 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>Wireless HART 67</title>
+<title>Hart 675</title>
 <style>
   :root{
     --bg:#0e1116; --panel:#161b22; --panel2:#1c2530; --line:#2a3441;
@@ -135,7 +135,7 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
 
 <div class="topbar">
   <button class="ham" id="ham">&#9776;</button>
-  <span class="tbrand">Wireless HART 67</span>
+  <span class="tbrand">Hart 675</span>
   <div class="tbstatus">
     <span class="chip"><span class="dot" id="tUsb"></span>USB</span>
     <span class="chip"><span class="dot" id="tTcp"></span>TCP</span>
@@ -171,8 +171,18 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
     </div>
 
     <div class="card">
+      <h3>Range &amp; Output</h3>
+      <div id="rangeTbl"></div>
+    </div>
+
+    <div class="card">
       <h3>Device Identification</h3>
       <div id="identTbl"></div>
+    </div>
+
+    <div class="card">
+      <h3>Device Status</h3>
+      <div id="statusTbl"></div>
     </div>
 
     <div class="card">
@@ -220,11 +230,39 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
     </div>
 
     <div class="card">
+      <h3>Calibration &amp; Trim</h3>
+      <div class="sub">Common-practice HART trims. Behaviour can vary by device - confirm against the manufacturer manual.</div>
+      <button class="btn sec" onclick="zeroTrim()">Zero Trim (Set PV Zero)</button>
+      <label class="fl">Loop Current Trim - measured 4 mA reading</label>
+      <input id="inTrim4" type="number" step="any" placeholder="e.g. 4.01">
+      <button class="btn sec" onclick="loopTrim(4)">Trim 4 mA Point</button>
+      <label class="fl">Loop Current Trim - measured 20 mA reading</label>
+      <input id="inTrim20" type="number" step="any" placeholder="e.g. 19.98">
+      <button class="btn sec" onclick="loopTrim(20)">Trim 20 mA Point</button>
+    </div>
+
+    <div class="card">
       <h3>Device Commands</h3>
       <button class="btn sec" onclick="refreshDevice()">Refresh Device</button>
       <button class="btn sec" onclick="readDynamic()">Read Dynamic Variables</button>
-      <button class="btn warn" onclick="selfTest()">Self Test (advanced)</button>
-      <button class="btn danger" onclick="deviceReset()">Device Reset</button>
+      <button class="btn warn" onclick="selfTest()">Self Test (Cmd 41)</button>
+      <button class="btn danger" onclick="deviceReset()">Device Reset (Cmd 42)</button>
+    </div>
+
+    <div class="card">
+      <h3>Command Terminal</h3>
+      <div class="sub">Send any HART command to the connected device. Universal escape hatch for advanced/factory operations.</div>
+      <label class="fl">Command number (0-253)</label>
+      <input id="inCmdNum" type="number" min="0" max="253" placeholder="e.g. 3">
+      <label class="fl">Request data (hex, optional)</label>
+      <input id="inCmdData" type="text" placeholder="e.g. 41 00 3F800000">
+      <button class="btn" onclick="sendRawCommand()">Send Command</button>
+      <div id="cmdResult"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px">
+        <h3 style="margin:0">History</h3>
+        <button class="btn sec" style="width:auto;margin:0;padding:6px 10px" onclick="clearCmdHistory()">Clear</button>
+      </div>
+      <div class="log" id="cmdHistory" style="margin-top:8px">No commands sent yet.</div>
     </div>
   </section>
 
@@ -285,17 +323,29 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
   <!-- ============ PROFILES ============ -->
   <section class="page" id="page-profiles">
     <h2 class="title">Profiles</h2>
-    <div class="sub">Manage installed device profiles.</div>
+    <div class="sub">Generate device profiles from DD packages, in your browser. No app, no cloud.</div>
+
     <div class="card">
       <h3>Active Profile</h3>
       <div id="profActive"></div>
     </div>
+
     <div class="card">
-      <h3>Upload Profile</h3>
-      <div class="sub">Select a Wireless HART Profile (.json) from your phone.</div>
-      <input type="file" id="profFile" accept=".json,application/json">
-      <button class="btn" onclick="uploadProfile()">Upload</button>
+      <h3>Build Profile from DD Package</h3>
+      <div class="sub">Select one or more vendor DD <b>.zip</b> packages (VEGA, Rosemount, Micro Motion, Emerson, etc.). Your browser extracts and parses them - nothing is uploaded except the finished profile.</div>
+      <input type="file" id="ddFiles" accept=".zip,application/zip" multiple>
+      <button class="btn" onclick="processDdPackages()">Parse Package(s)</button>
+      <div id="ddProgress" class="mut" style="font-size:12px;margin-top:8px"></div>
+      <div id="ddResults"></div>
     </div>
+
+    <div class="card">
+      <h3>Import Profile (.json)</h3>
+      <div class="sub">Install a profile generated here or by the hart-675-profiler repository.</div>
+      <input type="file" id="profFile" accept=".json,application/json">
+      <button class="btn sec" onclick="uploadProfile()">Import JSON</button>
+    </div>
+
     <div class="card">
       <h3>Installed Profiles</h3>
       <div id="profList"></div>
@@ -316,6 +366,17 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
 
 <div class="toast" id="toast"></div>
 
+<!-- Review/edit modal for generated profiles -->
+<div class="modal" id="reviewModal">
+  <div class="box" style="max-width:440px">
+    <h3 id="rvTitle">Review Profile</h3>
+    <div id="rvBody" style="max-height:60vh;overflow:auto"></div>
+    <button class="btn" id="rvSave">Save to Device</button>
+    <button class="btn sec" id="rvCancel">Cancel</button>
+  </div>
+</div>
+
+<script src="/ddparser.js"></script>
 <script>
 //==================== helpers ====================
 const $=id=>document.getElementById(id);
@@ -424,34 +485,67 @@ function rowsHtml(pairs){return pairs.map(p=>'<div class="row"><span class="k">'
   '</span><span class="v">'+(p[1]===''||p[1]==null?'<span class=mut>--</span>':p[1])+'</span></div>').join('');}
 function fmt(v,d){return (v==null||isNaN(v))?'--':Number(v).toFixed(d==null?2:d);}
 
-const MFR={0:'(generic)',17:'Endress+Hauser',26:'ABB',38:'Rosemount',
-  39:'Yokogawa',56:'Krohne',58:'Vega',74:'Micro Motion',96:'Magnetrol',
-  19:'Fisher',6:'Emerson'};
+const MFR={0:'(generic)',6:'Emerson',17:'Endress+Hauser',19:'Fisher',
+  26:'ABB',31:'Micro Motion',38:'Rosemount',39:'Yokogawa',56:'Krohne',
+  58:'VEGA',74:'Micro Motion',96:'Magnetrol',98:'VEGA Grieshaber KG'};
 
+const DEV_STATUS_BITS=[
+  [0x80,'Device Malfunction','bad'],[0x40,'Configuration Changed','warn'],
+  [0x20,'Cold Start','warn'],[0x10,'More Status Available','warn'],
+  [0x08,'Loop Current Fixed','warn'],[0x04,'Loop Current Saturated','bad'],
+  [0x02,'Non-PV Out of Limits','bad'],[0x01,'PV Out of Limits','bad']];
+function decodeDevStatus(b){
+  if(b==null)return '<span class=mut>--</span>';
+  if(b===0)return '<span class=ok>Good (0x00)</span>';
+  const on=DEV_STATUS_BITS.filter(x=>b&x[0]).map(x=>'<span class="'+x[2]+'">'+x[1]+'</span>');
+  return '0x'+b.toString(16).toUpperCase().padStart(2,'0')+' &middot; '+on.join(', ');
+}
+function commQuality(d){
+  const g=d.goodResponses||0,e=d.commErrors||0,t=g+e;
+  if(!t)return null; return Math.round(g*100/t);
+}
 async function loadDevice(){
   try{
     const d=await(await fetch('/api/hart')).json();
+    window._dev=d;
     const u=d.pvUnits||'';
     $('pvGrid').innerHTML=[
       ['PV',fmt(d.pv,3),u],['Loop Current',fmt(d.loopCurrent,3),'mA'],
-      ['% Range',fmt(d.percentRange,1),'%'],['SV',fmt(d.sv,3),''],
+      ['% Output',fmt(d.percentRange,1),'%'],['SV',fmt(d.sv,3),''],
       ['TV',fmt(d.tv,3),''],['QV',fmt(d.qv,3),'']
     ].map(m=>'<div class="metric"><div class="ml">'+m[0]+'</div><div class="mv">'+
       m[1]+'<span class="mu">'+m[2]+'</span></div></div>').join('');
+    const cu=d.configValid?(d.configUnitsStr||u):u;
+    $('rangeTbl').innerHTML=rowsHtml([
+      ['PV Units',cu||'--'],
+      ['Lower Range Value (LRV)',d.configValid?fmt(d.configLrv,3)+' '+cu:'<span class=mut>read in Maintenance</span>'],
+      ['Upper Range Value (URV)',d.configValid?fmt(d.configUrv,3)+' '+cu:'<span class=mut>read in Maintenance</span>'],
+      ['Damping',d.configValid?fmt(d.configDamping,2)+' s':'--']
+    ]);
     const mfr=MFR[d.manufacturerId]||('ID '+d.manufacturerId);
     $('identTbl').innerHTML=rowsHtml([
-      ['Manufacturer',mfr],['Device Type','0x'+(d.deviceType||0).toString(16)],
+      ['Manufacturer',mfr],['Model / Device Type','0x'+(d.deviceType||0).toString(16).toUpperCase()],
       ['Device Revision',d.deviceRevision],['Software Rev',d.softwareRevision],
-      ['Hardware Rev',d.hardwareRevision],['Universal Rev',d.universalRev],
+      ['Hardware Rev',d.hardwareRevision],['HART (Universal) Rev',d.universalRev],
       ['Unique Device ID',d.deviceId],['Polling Address',d.pollAddress],
       ['Tag',d.tag],['Long Tag',d.longTag],['Descriptor',d.descriptor],
       ['Message',d.message],['Date',d.date]
     ]);
+    const q=commQuality(d);
+    $('statusTbl').innerHTML=rowsHtml([
+      ['Device Status',decodeDevStatus(d.deviceStatus)],
+      ['Response Code',d.responseCode==null?'--':d.responseCode],
+      ['Write Protect',d.writeProtect===0?'No':(d.writeProtect===1?'<span class=warn>Yes</span>':'--')],
+      ['Communication Quality',q==null?'--':(q+'%')]
+    ]);
     const st=d.valid?'<span class="ok">Online</span>':
       (d.enabled?'<span class="bad">Searching</span>':'<span class="mut">Master off</span>');
+    const sig=(window._status&&window._status.transmitting)?'<span class=ok>Active</span>':
+      ((window._status&&window._status.carrier)?'<span class=ok>Carrier</span>':'<span class=mut>Idle</span>');
     $('commTbl').innerHTML=rowsHtml([
       ['HART Carrier',(window._status&&window._status.carrier)?'<span class=ok>Detected</span>':'<span class=mut>None</span>'],
-      ['Communication',st],['Last Response',d.lastCommMsAgo+' ms ago'],
+      ['Signal Activity',sig],
+      ['Communication',st],['Last Communication',d.lastCommMsAgo+' ms ago'],
       ['Good Responses',d.goodResponses],['Comm Errors',d.commErrors],
       ['TX Frames',d.txFrames],['RX Frames',d.rxFrames]
     ]);
@@ -715,14 +809,28 @@ async function doFactory(){if(!await confirmDialog('Factory Reset',[['Erase all 
   await fetch('/api/factoryreset',{method:'POST'});toast('Factory reset...');}
 
 //==================== PROFILES ====================
+const MATCH_DESC={exact:'Exact match (manufacturer + type + revision)',
+  type:'Device-type match (revision-agnostic)',
+  lower:'Closest lower revision',higher:'Closest higher revision',
+  family:'Manufacturer family match',none:'No match (generic mode)'};
 async function loadProfiles(){
   try{
     const st=await(await fetch('/api/profile/status')).json();
     prof=await(await fetch('/api/profile/active')).json();
+    const d=window._dev||await(await fetch('/api/hart')).json();
     let h='';
-    if(!st.custom){h+='<div class="banner">No matching device profile. Running Generic HART Mode. Upload a profile below.</div>';}
+    if(!st.custom){
+      if(d&&d.valid){
+        h+='<div class="banner">Profile Not Installed for the connected device (Mfr '+
+          (MFR[d.manufacturerId]||d.manufacturerId)+', Type 0x'+(d.deviceType||0).toString(16).toUpperCase()+
+          ', Rev '+d.deviceRevision+'). Running Generic HART Mode - build or import a profile below.</div>';
+      } else {
+        h+='<div class="banner">No matching device profile. Running Generic HART Mode.</div>';
+      }
+    }
     h+=rowsHtml([
-      ['Current Profile',st.active],['Custom',st.custom?'Yes':'No (generic)'],
+      ['Current Profile',st.active],
+      ['Match Quality',MATCH_DESC[st.matchQuality]||st.matchQuality||'--'],
       ['Manufacturer',prof.manufacturer||'--'],['Device',prof.device||'--'],
       ['Revision',prof.revision==null?'--':prof.revision],['Version',prof.version||'--'],
       ['Author',prof.author||'--'],['Pages',(prof.pages||[]).length],
@@ -731,12 +839,23 @@ async function loadProfiles(){
     $('profActive').innerHTML=h;
     const list=await(await fetch('/api/profiles')).json();
     $('profList').innerHTML=list.map(p=>{
+      const exp='<button class="btn sec" style="margin-top:8px" onclick="exportProfile(\''+p.file+'\')">Export</button>';
       const del=p.file==='generic.json'?'':'<button class="btn danger" style="margin-top:8px" onclick="delProfile(\''+p.file+'\')">Delete</button>';
       return '<div class="card" style="background:var(--panel2)"><div class="row"><span class="k">'+
         (p.manufacturer||'?')+' '+(p.device||'')+'</span><span class="v">'+(p.valid?'':'<span class=bad>invalid</span>')+'</span></div>'+
-        rowsHtml([['File',p.file],['Revision',p.revision],['Version',p.version||'--'],['Pages',p.pages||0],['Size',p.size+' B']])+del+'</div>';
+        rowsHtml([['File',p.file],['Revision',p.revision],['Version',p.version||'--'],['Pages',p.pages||0],['Size',p.size+' B']])+
+        '<div class="btnrow">'+exp+del+'</div></div>';
     }).join('')||'<div class="mut">None.</div>';
   }catch(e){$('profActive').innerHTML='<div class="mut">Profiles unavailable.</div>';}
+}
+async function exportProfile(file){
+  try{
+    const j=await(await fetch('/api/profile?file='+encodeURIComponent(file))).json();
+    const blob=new Blob([JSON.stringify(j,null,2)],{type:'application/json'});
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=file;
+    document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(a.href);
+    toast('Exported '+file);
+  }catch(e){toast('Export failed: '+e.message);}
 }
 async function uploadProfile(){
   const f=$('profFile').files[0];if(!f)return toast('Choose a file');
@@ -785,43 +904,98 @@ function decode(bytes,d){
     default:return rdFloat(bytes,o);
   }
 }
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');}
 async function renderWidget(w){
-  if(w.type==='section')return '<h3 style="margin-top:6px">'+(w.label||'')+'</h3>';
+  if(w.type==='section')return '<h3 style="margin-top:10px">'+esc(w.label)+'</h3>';
   const id='w'+Math.random().toString(36).slice(2,8);
+  const help=w.help?('<div class="mut" style="font-size:11px;margin-bottom:4px">'+esc(w.help)+'</div>'):'';
+  // Display-only widget (no command wiring, e.g. generated Tier B fields)
+  if(!w.read&&!w.write&&w.command==null&&w.type!=='button'&&w.type!=='graph'&&w.type!=='echo'){
+    return '<div class="row"><span class="k">'+esc(w.label)+'</span><span class="v mut">'+(w.units||'info')+'</span></div>'+help;
+  }
   if(w.type==='read'||w.type==='value'){
     let val='--';
     try{if(w.read){const r=await hartCmd(w.read.command,w.read.data||'');let v=decode(r.bytes,w.read);
-      val=(typeof v==='number')?(isNaN(v)?'--':v.toFixed(w.read.dec==null?3:w.read.dec)):v;}}catch(e){val='<span class=bad>err</span>';}
-    return '<div class="row"><span class="k">'+(w.label||'')+'</span><span class="v">'+val+' '+(w.units||'')+'</span></div>';
+      val=(typeof v==='number')?(isNaN(v)?'--':v.toFixed(w.read.dec==null?3:w.read.dec)):esc(v);}}catch(e){val='<span class=bad>err</span>';}
+    return '<div class="row"><span class="k">'+esc(w.label)+'</span><span class="v">'+val+' '+esc(w.units||'')+'</span></div>';
   }
-  if(w.type==='enum'){
+  if(w.type==='status'){
+    let v='--',cls='mut';
+    try{if(w.read){const r=await hartCmd(w.read.command,'');const raw=decode(r.bytes,w.read);
+      const ok=(w.okValue==null)?(raw===0||raw==='0'):(raw==w.okValue);
+      cls=ok?'ok':'bad';v=ok?(w.okText||'OK'):(w.badText||('0x'+Number(raw).toString(16)));}}catch(e){v='err';cls='bad';}
+    return '<div class="row"><span class="k">'+esc(w.label)+'</span><span class="v '+cls+'">'+v+'</span></div>';
+  }
+  if(w.type==='enum'||w.type==='radio'){
     let cur='';try{if(w.read){const r=await hartCmd(w.read.command,'');cur=r.bytes[w.read.offset||0];}}catch(e){}
-    let opts=(w.options||[]).map(o=>'<option value="'+o.v+'"'+(o.v==cur?' selected':'')+'>'+o.t+'</option>').join('');
-    return '<label class="fl">'+(w.label||'')+'</label><select id="'+id+'">'+opts+'</select>'+
-      (w.write?'<button class="btn" onclick="wEnum(\''+id+'\','+w.write.command+')">Write '+(w.label||'')+'</button>':'');
+    let opts=(w.options||[]).map(o=>'<option value="'+o.v+'"'+(o.v==cur?' selected':'')+'>'+esc(o.t)+'</option>').join('');
+    return '<label class="fl">'+esc(w.label)+'</label>'+help+'<select id="'+id+'">'+opts+'</select>'+
+      (w.write?'<button class="btn" onclick="wEnum(\''+id+'\','+w.write.command+')">Write '+esc(w.label)+'</button>':'');
   }
-  if(w.type==='number'||w.type==='float'){
+  if(w.type==='checkbox'){
+    let on=false;try{if(w.read){const r=await hartCmd(w.read.command,'');on=!!r.bytes[w.read.offset||0];}}catch(e){}
+    return '<div class="row"><span class="k">'+esc(w.label)+'</span><span class="v">'+
+      '<input type="checkbox" id="'+id+'" style="width:auto"'+(on?' checked':'')+
+      (w.write?' onchange="wChk(\''+id+'\','+w.write.command+')"':'')+'></span></div>'+help;
+  }
+  if(w.type==='slider'){
     let cur=NaN;try{if(w.read){const r=await hartCmd(w.read.command,'');cur=decode(r.bytes,w.read);}}catch(e){}
-    return '<label class="fl">'+(w.label||'')+(w.units?(' ('+w.units+')'):'')+'</label>'+
-      '<input id="'+id+'" type="number" step="any" value="'+(isNaN(cur)?'':cur)+'">'+
-      (w.write?'<button class="btn" onclick="wNum(\''+id+'\','+w.write.command+',\''+(w.write.encode||'float')+'\',\''+(w.label||'')+'\')">Write</button>':'');
+    const mn=w.min==null?0:w.min,mx=w.max==null?100:w.max;
+    return '<label class="fl">'+esc(w.label)+(w.units?(' ('+esc(w.units)+')'):'')+'</label>'+help+
+      '<input id="'+id+'" type="range" min="'+mn+'" max="'+mx+'" step="'+(w.step||'any')+'" value="'+(isNaN(cur)?mn:cur)+'" oninput="$(\''+id+'v\').textContent=this.value">'+
+      '<div class="mut" id="'+id+'v">'+(isNaN(cur)?mn:cur)+'</div>'+
+      (w.write?'<button class="btn" onclick="wNum(\''+id+'\','+w.write.command+',\''+(w.write.encode||'float')+'\',\''+esc(w.label)+'\')">Write</button>':'');
+  }
+  if(w.type==='number'||w.type==='float'||w.type==='text'){
+    const isText=w.type==='text';let cur=isText?'':NaN;
+    try{if(w.read){const r=await hartCmd(w.read.command,'');cur=decode(r.bytes,w.read);}}catch(e){}
+    const val=isText?esc(cur||''):(isNaN(cur)?'':cur);
+    return '<label class="fl">'+esc(w.label)+(w.units?(' ('+esc(w.units)+')'):'')+'</label>'+help+
+      '<input id="'+id+'" type="'+(isText?'text':'number')+'"'+(isText?'':' step="any"')+' value="'+val+'">'+
+      (w.write?'<button class="btn" onclick="wNum(\''+id+'\','+w.write.command+',\''+(w.write.encode||(isText?'ascii':'float'))+'\',\''+esc(w.label)+'\')">Write</button>':'');
   }
   if(w.type==='button'){
-    return '<button class="btn '+(w.style||'sec')+'" onclick="wBtn('+w.command+',\''+(w.data||'')+'\',\''+(w.label||'')+'\','+(w.confirm?'true':'false')+')">'+(w.label||'Send')+'</button>';
+    return '<button class="btn '+(w.style||'sec')+'" onclick="wBtn('+w.command+',\''+(w.data||'')+'\',\''+esc(w.label)+'\','+(w.confirm?'true':'false')+')">'+esc(w.label||'Send')+'</button>'+help;
   }
-  if(w.type==='graph'){
+  if(w.type==='graph'||w.type==='trend'){
     const cid=id+'c';
     setTimeout(()=>graphWidget(cid,w),50);
-    return '<div class="mut" style="font-size:12px">'+(w.label||'')+'</div><canvas id="'+cid+'"></canvas>';
+    return '<div class="mut" style="font-size:12px">'+esc(w.label)+'</div><canvas id="'+cid+'"></canvas>';
+  }
+  if(w.type==='echo'){
+    // Echo / threshold curve: a command returns an array of float points.
+    const cid=id+'e';
+    setTimeout(()=>echoWidget(cid,w),50);
+    return '<div class="mut" style="font-size:12px">'+esc(w.label||'Echo Curve')+'</div>'+
+      '<canvas id="'+cid+'" style="height:160px"></canvas>'+
+      '<button class="btn sec" onclick="echoWidget(\''+cid+'\','+JSON.stringify(w).replace(/"/g,'&quot;')+')">Refresh Curve</button>';
   }
   return '';
+}
+async function wChk(id,cmd){const on=$(id).checked;
+  try{await hartCmd(cmd,b2hx([on?1:0]));toast('Written');}catch(e){toast('Failed: '+e.message);}}
+async function echoWidget(cid,w){
+  try{
+    const r=await hartCmd(w.read.command,w.read.data||'');
+    const pts=[];const o=(w.read&&w.read.offset)||0,step=(w.read&&w.read.stride)||4;
+    for(let i=o;i+4<=r.bytes.length;i+=step){pts.push(rdFloat(r.bytes,i));}
+    drawGraph(cid,pts,'#4fc3f7');
+  }catch(e){drawGraph(cid,[],'#4fc3f7');}
 }
 async function wEnum(id,cmd){const v=parseInt($(id).value);
   if(!await confirmDialog('Write',[['New value',v]]))return;
   try{await hartCmd(cmd,b2hx([v]));toast('Written');}catch(e){toast('Failed: '+e.message);}}
-async function wNum(id,cmd,enc,label){const v=parseFloat($(id).value);if(isNaN(v))return toast('Enter value');
-  if(!await confirmDialog('Write '+label,[['New',v]]))return;
-  let data=enc==='u8'?b2hx([v&255]):enc==='u16'?b2hx([(v>>8)&255,v&255]):b2hx(wrFloat(v));
+async function wNum(id,cmd,enc,label){
+  let data,shown;
+  if(enc==='ascii'){
+    const s=$(id).value||'';shown=s;
+    data=b2hx(Array.from(s).map(c=>c.charCodeAt(0)&255));
+  }else{
+    const v=parseFloat($(id).value);if(isNaN(v))return toast('Enter value');shown=v;
+    data=enc==='u8'?b2hx([v&255]):enc==='u16'?b2hx([(v>>8)&255,v&255]):
+         enc==='u32'?b2hx([(v>>24)&255,(v>>16)&255,(v>>8)&255,v&255]):b2hx(wrFloat(v));
+  }
+  if(!await confirmDialog('Write '+label,[['New',shown]]))return;
   try{await hartCmd(cmd,data);toast('Written');}catch(e){toast('Failed: '+e.message);}}
 async function wBtn(cmd,data,label,needConfirm){
   if(needConfirm&&!await confirmDialog(label,[['Execute?','']]))return;
@@ -833,17 +1007,208 @@ async function graphWidget(cid,w){
     drawGraph(cid,graphData[cid],'#4fc3f7');}catch(e){}
 }
 
+//==================== HART MAINTENANCE: trim + terminal ====================
+async function zeroTrim(){
+  if(!await confirmDialog('Zero Trim (Command 43)',[
+    ['Action','Set the current process input as the PV zero'],
+    ['Note','Apply your zero/known condition first']]))return;
+  try{await hartCmd(43,'');toast('Zero trim sent');}catch(e){toast('Failed: '+e.message);}
+}
+async function loopTrim(pt){
+  const v=parseFloat($(pt===4?'inTrim4':'inTrim20').value);
+  if(isNaN(v))return toast('Enter the measured mA reading');
+  const cmd=pt===4?45:46;
+  if(!await confirmDialog('Loop Current Trim '+pt+' mA (Command '+cmd+')',
+    [['Measured reading',v+' mA'],['Note','Device must be in fixed '+pt+' mA mode']]))return;
+  try{await hartCmd(cmd,b2hx(wrFloat(v)));toast(pt+' mA point trimmed');}
+  catch(e){toast('Failed: '+e.message);}
+}
+
+let cmdHist=[];
+function loadCmdHistory(){
+  try{cmdHist=JSON.parse(localStorage.getItem('h675cmd')||'[]');}catch(e){cmdHist=[];}
+  renderCmdHistory();
+}
+function renderCmdHistory(){
+  const el=$('cmdHistory');if(!el)return;
+  el.textContent=cmdHist.length?cmdHist.map(h=>
+    h.t+'  CMD '+h.cmd+(h.data?(' ['+h.data+']'):'')+'\n   -> '+h.result).join('\n\n')
+    :'No commands sent yet.';
+}
+function pushCmdHistory(cmd,data,result){
+  cmdHist.unshift({t:new Date().toLocaleTimeString(),cmd:cmd,data:data,result:result});
+  if(cmdHist.length>30)cmdHist.pop();
+  try{localStorage.setItem('h675cmd',JSON.stringify(cmdHist));}catch(e){}
+  renderCmdHistory();
+}
+function clearCmdHistory(){cmdHist=[];try{localStorage.removeItem('h675cmd');}catch(e){}renderCmdHistory();}
+async function sendRawCommand(){
+  const num=parseInt($('inCmdNum').value);
+  if(isNaN(num)||num<0||num>253)return toast('Command 0-253');
+  const dataHex=($('inCmdData').value||'').replace(/[^0-9a-fA-F]/g,'');
+  const res=$('cmdResult');
+  res.innerHTML='<div class="mut" style="margin-top:8px">Sending...</div>';
+  try{
+    const r=await hartCmd(num,dataHex);
+    const ascii=r.bytes.map(b=>(b>=32&&b<127)?String.fromCharCode(b):'.').join('');
+    res.innerHTML=rowsHtml([
+      ['Response Code',r.rc],['Device Status',decodeDevStatus(r.ds)],
+      ['Data (hex)',r.hex||'<span class=mut>none</span>'],
+      ['Data (ascii)',ascii||'<span class=mut>none</span>'],
+      ['Length',r.bytes.length+' bytes']
+    ]);
+    pushCmdHistory(num,dataHex,'rc='+r.rc+' ds=0x'+(r.ds||0).toString(16)+' ['+(r.hex||'')+']');
+  }catch(e){
+    res.innerHTML='<div class="bad" style="margin-top:8px">'+e.message+'</div>';
+    pushCmdHistory(num,dataHex,'ERROR: '+e.message);
+  }
+}
+
+//==================== DD PROFILER (browser-side) ====================
+const TEXT_EXT=/\.(dd|ddl|xml|cfg|ini|h|txt)$/i;
+const ENC_MARK='SIMATIC PDM - Encrypted File';
+const td=new TextDecoder('utf-8');
+
+// Minimal ZIP reader (central-directory based). Uses the browser-native
+// DecompressionStream for DEFLATE; no external library, fully offline.
+async function inflateRaw(bytes){
+  if(typeof DecompressionStream==='undefined')throw new Error('Browser too old (no DecompressionStream)');
+  const ds=new DecompressionStream('deflate-raw');
+  const stream=new Response(new Blob([bytes]).stream().pipeThrough(ds));
+  return new Uint8Array(await stream.arrayBuffer());
+}
+async function readZip(file){
+  const data=new Uint8Array(await file.arrayBuffer());
+  const dv=new DataView(data.buffer);
+  // locate End Of Central Directory
+  let eo=-1;
+  for(let i=data.length-22;i>=0&&i>=data.length-22-65536;i--){
+    if(dv.getUint32(i,true)===0x06054b50){eo=i;break;}
+  }
+  if(eo<0)throw new Error('Not a ZIP file');
+  let cdOff=dv.getUint32(eo+16,true);
+  const total=dv.getUint16(eo+10,true);
+  const out=[];
+  let p=cdOff;
+  for(let n=0;n<total;n++){
+    if(dv.getUint32(p,true)!==0x02014b50)break;
+    const method=dv.getUint16(p+10,true);
+    const csize=dv.getUint32(p+20,true);
+    const nameLen=dv.getUint16(p+28,true);
+    const extraLen=dv.getUint16(p+30,true);
+    const cmtLen=dv.getUint16(p+32,true);
+    const lho=dv.getUint32(p+42,true);
+    const name=td.decode(data.subarray(p+46,p+46+nameLen));
+    p+=46+nameLen+extraLen+cmtLen;
+    if(/\/$/.test(name)){continue;}
+    // local header to find true data offset
+    if(dv.getUint32(lho,true)!==0x04034b50){out.push({name,text:'',encrypted:true});continue;}
+    const lnl=dv.getUint16(lho+26,true),lel=dv.getUint16(lho+28,true);
+    const dataStart=lho+30+lnl+lel;
+    const comp=data.subarray(dataStart,dataStart+csize);
+    const bn=name.replace(/\\/g,'/');
+    let text='',encrypted=true;
+    if(TEXT_EXT.test(bn)){
+      try{
+        let raw=method===0?comp:await inflateRaw(comp);
+        const head=td.decode(raw.subarray(0,64));
+        if(head.indexOf(ENC_MARK)>=0){encrypted=true;}
+        else{text=td.decode(raw);encrypted=false;}
+      }catch(e){encrypted=true;}
+    }
+    out.push({name:bn,text,encrypted});
+  }
+  return out;
+}
+
+let ddPending=[];
+async function processDdPackages(){
+  const files=$('ddFiles').files;
+  if(!files||!files.length)return toast('Choose one or more .zip packages');
+  if(typeof DDParser==='undefined')return toast('Profiler engine not loaded - reload the page');
+  const prog=$('ddProgress'),box=$('ddResults');
+  box.innerHTML='';ddPending=[];
+  for(let i=0;i<files.length;i++){
+    const f=files[i];
+    prog.textContent='Parsing '+(i+1)+'/'+files.length+': '+f.name+' ...';
+    await sleep(10);
+    try{
+      const entries=await readZip(f);
+      const res=DDParser.parsePackage(entries);
+      const idx=ddPending.length;
+      ddPending.push({res:res,fname:DDParser.suggestFilename(res.profile)});
+      const p=res.profile||{};
+      const tierTxt=res.tier==='B'?'<span class=ok>Full (menus extracted)</span>':'<span class=warn>Identity + generic</span>';
+      let warn=res.warnings.length?('<div class="mut" style="font-size:12px;margin-top:6px">'+res.warnings.map(w=>'&bull; '+w).join('<br>')+'</div>'):'';
+      box.innerHTML+='<div class="card" style="background:var(--panel2)">'+
+        '<div class="row"><span class="k">'+(p.manufacturer||'?')+' '+(p.device||'')+'</span>'+
+        '<span class="v">'+tierTxt+'</span></div>'+
+        rowsHtml([['Source file',f.name],
+          ['Mfr ID',p.manufacturer_id==null?'<span class=bad>unknown</span>':p.manufacturer_id],
+          ['Device Type',p.device_type==null?'<span class=bad>unknown</span>':('0x'+(p.device_type>>>0).toString(16).toUpperCase())],
+          ['Revision',p.revision],['Pages',(p.pages||[]).length]])+warn+
+        '<button class="btn" onclick="reviewProfile('+idx+')">Review &amp; Save</button></div>';
+    }catch(e){
+      box.innerHTML+='<div class="card" style="background:var(--panel2)"><div class="bad">'+f.name+': '+e.message+'</div></div>';
+    }
+  }
+  prog.textContent='Done. Review each profile and save the ones you want.';
+}
+
+function reviewProfile(idx){
+  const item=ddPending[idx];if(!item)return;
+  const p=item.res.profile;
+  $('rvTitle').textContent='Review Profile';
+  let pages=(p.pages||[]).map(pg=>'<div class="row"><span class="k">'+pg.title+'</span><span class="v">'+pg.widgets.length+' items</span></div>').join('')
+    ||'<div class="mut">No device-specific pages (generic HART pages still apply).</div>';
+  $('rvBody').innerHTML=
+    '<label class="fl">Device Name</label><input id="rvName" value="'+(p.device||'').replace(/"/g,'&quot;')+'">'+
+    '<label class="fl">Manufacturer</label><input id="rvMfr" value="'+(p.manufacturer||'').replace(/"/g,'&quot;')+'">'+
+    '<label class="fl">Manufacturer ID (decimal)</label><input id="rvMfrId" type="number" value="'+(p.manufacturer_id==null?'':p.manufacturer_id)+'">'+
+    '<label class="fl">Device Type (decimal, expanded)</label><input id="rvType" type="number" value="'+(p.device_type==null?'':p.device_type)+'">'+
+    '<label class="fl">Device Revision</label><input id="rvRev" type="number" value="'+(p.revision==null?'':p.revision)+'">'+
+    '<label class="fl">Save as filename</label><input id="rvFile" value="'+item.fname+'">'+
+    '<h3 style="margin-top:12px">Generated Pages</h3>'+pages;
+  const m=$('reviewModal');m.classList.add('show');
+  $('rvCancel').onclick=()=>m.classList.remove('show');
+  $('rvSave').onclick=async()=>{
+    const mfrId=parseInt($('rvMfrId').value),type=parseInt($('rvType').value),rev=parseInt($('rvRev').value);
+    p.device=$('rvName').value.trim()||p.device;
+    p.manufacturer=$('rvMfr').value.trim()||p.manufacturer;
+    p.match=p.match||{};
+    if(!isNaN(mfrId)){p.manufacturer_id=mfrId;p.match.manufacturerId=mfrId;}
+    if(!isNaN(type)){p.device_type=type;p.match.deviceType=type;}
+    if(!isNaN(rev)){p.revision=rev;p.match.revision=rev;}
+    let fn=($('rvFile').value||item.fname).trim();
+    if(!/\.json$/i.test(fn))fn+='.json';
+    m.classList.remove('show');
+    await saveProfileJson(p,fn);
+  };
+}
+async function saveProfileJson(profile,filename){
+  try{
+    const blob=new Blob([JSON.stringify(profile)],{type:'application/json'});
+    const fd=new FormData();fd.append('profile',blob,filename);
+    const r=await fetch('/api/profile/upload',{method:'POST',body:fd});
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    toast('Saved '+filename);
+    await buildDynNav();await loadProfiles();
+  }catch(e){toast('Save failed: '+e.message);}
+}
+
 //==================== boot ====================
 async function init(){
   bindNav();
+  loadCmdHistory();
   try{const s=await(await fetch('/api/settings')).json();if(s.dashRefreshMs)refreshMs=s.dashRefreshMs;}catch(e){}
   await buildDynNav();
   await loadStatus();
   showPage('device');
   statusTimer=setInterval(loadStatus,refreshMs);
-  devTimer=setInterval(()=>{
-    if(curPage==='device')loadDevice();
-    else if(curPage==='diag')loadTrends();
+  // HART Device page refreshes at ~1 Hz per spec; other pages at refreshMs.
+  devTimer=setInterval(()=>{ if(curPage==='device')loadDevice(); },1000);
+  setInterval(()=>{
+    if(curPage==='diag')loadTrends();
     else if(curPage==='monitor')loadMonitor();
   },refreshMs);
 }

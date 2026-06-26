@@ -11,6 +11,7 @@
 #include "TcpBridge.h"
 #include "TrendLogger.h"
 #include "WebPages.h"
+#include "DDParserJS.h"
 
 WebDashboard::WebDashboard()
     : server(WEB_SERVER_PORT), startMs(0), settings(nullptr), battery(nullptr),
@@ -105,6 +106,11 @@ String WebDashboard::buildStatusJson() {
 void WebDashboard::setupRoutes() {
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *req) {
     req->send_P(200, "text/html", INDEX_HTML);
+  });
+
+  // Browser DD profiler engine (served from flash, fully offline).
+  server.on("/ddparser.js", HTTP_GET, [](AsyncWebServerRequest *req) {
+    req->send_P(200, "application/javascript", DDPARSER_JS);
   });
 
   server.on("/api/status", HTTP_GET, [this](AsyncWebServerRequest *req) {

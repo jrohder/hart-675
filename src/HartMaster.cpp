@@ -327,8 +327,16 @@ bool HartMaster::doCommand0(bool useLong, uint8_t pollAddr) {
   }
   const uint8_t *p = rxPayload;
   // p[0] = 254 (expansion). p[1..2] = expanded device type. p[9..11] = dev id.
+  // The true Manufacturer ID code lives at p[17..18] (HART 6/7 Command 0). For
+  // many vendors the expanded device-type high byte happens to equal the mfr
+  // code, but that is not guaranteed - so prefer the dedicated field and only
+  // fall back to p[1] for short/legacy replies.
   device.deviceType = ((uint16_t)p[1] << 8) | p[2];
-  device.manufacturerId = p[1];
+  if (rxPayloadLen >= 19) {
+    device.manufacturerId = ((uint16_t)p[17] << 8) | p[18];
+  } else {
+    device.manufacturerId = p[1];
+  }
   device.universalRev = p[4];
   device.deviceRevision = p[5];
   device.softwareRevision = p[6];

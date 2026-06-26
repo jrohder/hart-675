@@ -16,14 +16,14 @@ static const char GENERIC_JSON[] PROGMEM = R"JSON({
   "device":"HART Device",
   "revision":0,
   "version":"1.0",
-  "author":"Wireless HART 67",
+  "author":"Hart Communicator 675",
   "match":{"manufacturerId":0,"deviceType":0},
   "pages":[]
 })JSON";
 
 ProfileManager::ProfileManager()
     : mounted(false), activeIsCustom(false), activeFile(GENERIC_NAME),
-      uploading(false) {}
+      matchKind("none"), uploading(false) {}
 
 bool ProfileManager::begin() {
   if (!LittleFS.begin(true)) {  // format on first boot if needed
@@ -176,6 +176,16 @@ void ProfileManager::uploadAbort() {
   }
 }
 
+// Revision-aware matching with graceful fallback. For a connected device
+// (manufacturerId / deviceType / deviceRevision) the best installed profile is
+// chosen in this priority order:
+//   1. exact  – manufacturerId + deviceType + revision all match
+//   2. type   – manufacturerId + deviceType match, profile omits a revision
+//               (revision-agnostic device profile)
+//   3. lower  – same manufacturerId + deviceType, nearest revision below
+//   4. higher – same manufacturerId + deviceType, nearest revision above
+//   5. family – manufacturerId only (profile omits deviceType or uses 0xFFFF)
+//   6. none   – no candidate; fall back to generic mode
 bool ProfileManager::matchDevice(uint16_t manufacturerId, uint16_t deviceType,
                                  uint8_t deviceRevision) {
   if (!mounted) {
@@ -185,7 +195,12 @@ bool ProfileManager::matchDevice(uint16_t manufacturerId, uint16_t deviceType,
   if (!root || !root.isDirectory()) {
     return false;
   }
-  String found;
+
+  String exactMatch, typeMatch, familyMatch;
+  String lowerMatch, higherMatch;
+  int lowerRev = -1;      // highest revision strictly below deviceRevision
+  int higherRev = 0x10000;  // lowest revision strictly above deviceRevision
+
   File f = root.openNextFile();
   while (f) {
     String name = baseName(String(f.name()));
@@ -195,13 +210,29 @@ bool ProfileManager::matchDevice(uint16_t manufacturerId, uint16_t deviceType,
         JsonObject m = doc["match"];
         if (!m.isNull()) {
           uint16_t mid = m["manufacturerId"] | 0xFFFF;
-          uint16_t dt = m["deviceType"] | 0xFFFF;
-          bool revOk = true;
-          if (m["revision"].is<int>()) {
-            revOk = ((uint8_t)(m["revision"] | 0) == deviceRevision);
-          }
-          if (mid == manufacturerId && dt == deviceType && revOk) {
-            found = name;
+          if (mid == manufacturerId) {
+            bool hasDevType = m["deviceType"].is<int>();
+            uint16_t dt = hasDevType ? (uint16_t)(int)m["deviceType"] : 0xFFFF;
+
+            if (hasDevType && dt != 0xFFFF && dt == deviceType) {
+              if (m["revision"].is<int>()) {
+                int rev = (int)(m["revision"] | -1);
+                if (rev == (int)deviceRevision) {
+                  exactMatch = name;
+                } else if (rev >= 0 && rev < (int)deviceRevision &&
+                           rev > lowerRev) {
+                  lowerRev = rev;
+                  lowerMatch = name;
+                } else if (rev > (int)deviceRevision && rev < higherRev) {
+                  higherRev = rev;
+                  higherMatch = name;
+                }
+              } else if (typeMatch.isEmpty()) {
+                typeMatch = name;  // rev-agnostic profile for this device type
+              }
+            } else if ((!hasDevType || dt == 0xFFFF) && familyMatch.isEmpty()) {
+              familyMatch = name;  // manufacturer-level fallback
+            }
           }
         }
       }
@@ -209,11 +240,26 @@ bool ProfileManager::matchDevice(uint16_t manufacturerId, uint16_t deviceType,
     f = root.openNextFile();
   }
 
+  String found;
+  String kind;
+  if (exactMatch.length()) {
+    found = exactMatch;  kind = "exact";
+  } else if (typeMatch.length()) {
+    found = typeMatch;   kind = "type";
+  } else if (lowerMatch.length()) {
+    found = lowerMatch;  kind = "lower";
+  } else if (higherMatch.length()) {
+    found = higherMatch; kind = "higher";
+  } else if (familyMatch.length()) {
+    found = familyMatch; kind = "family";
+  }
+
   if (found.length()) {
-    if (!activeIsCustom || activeFile != found) {
+    if (!activeIsCustom || activeFile != found || matchKind != kind) {
       activeFile = found;
       activeIsCustom = true;
-      systemStatus.log("[PROFILE] Active: " + found);
+      matchKind = kind;
+      systemStatus.log("[PROFILE] Active (" + kind + "): " + found);
     }
     return true;
   }
@@ -227,6 +273,7 @@ void ProfileManager::clearActive() {
   }
   activeIsCustom = false;
   activeFile = GENERIC_NAME;
+  matchKind = "none";
 }
 
 String ProfileManager::activeProfileJson() {
@@ -238,6 +285,7 @@ String ProfileManager::statusJson() {
   j += "\"fsReady\":" + String(mounted ? "true" : "false") + ",";
   j += "\"custom\":" + String(activeIsCustom ? "true" : "false") + ",";
   j += "\"active\":\"" + activeFile + "\",";
+  j += "\"matchQuality\":\"" + matchKind + "\",";
   j += "\"fsTotal\":" + String((uint32_t)fsTotalBytes()) + ",";
   j += "\"fsUsed\":" + String((uint32_t)fsUsedBytes());
   j += "}";
