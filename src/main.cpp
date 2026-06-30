@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <WiFi.h>
+#include <ArduinoOTA.h>
 #include <esp_sleep.h>
 
 #include "BatteryManager.h"
@@ -322,6 +323,18 @@ void setup() {
   systemStatus.log("[WiFi] AP '" + settings.getSsid() + "' @ " +
                    WiFi.softAPIP().toString());
 
+  ArduinoOTA.setHostname("hart_675");
+  ArduinoOTA.onStart([]() {
+    systemStatus.log("[OTA] ArduinoOTA start");
+  });
+  ArduinoOTA.onEnd([]() {
+    systemStatus.log("[OTA] ArduinoOTA end");
+  });
+  ArduinoOTA.onError([](ota_error_t err) {
+    systemStatus.log(String("[OTA] ArduinoOTA error ") + (int)err);
+  });
+  ArduinoOTA.begin();
+
   tcp.begin(settings.getTcpPort());
   web.begin(&settings, &battery, &hart, &tcp, &trend, &hartMaster, &led);
 
@@ -335,6 +348,7 @@ void setup() {
 }
 
 void loop() {
+  ArduinoOTA.handle();
   led.update();
   button.update();
   battery.update();
@@ -382,6 +396,11 @@ void loop() {
   if (web.factoryResetRequested()) {
     systemStatus.log("[WEB] Factory reset requested");
     settings.factoryReset();
+    delay(150);
+    ESP.restart();
+  }
+  if (web.otaRebootRequested()) {
+    systemStatus.log("[WEB] OTA reboot");
     delay(150);
     ESP.restart();
   }

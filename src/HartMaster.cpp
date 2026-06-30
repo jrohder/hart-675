@@ -392,6 +392,49 @@ bool HartMaster::readRosemountRangeVia149() {
   return false;
 }
 
+bool HartMaster::readVegaConfigVia152() {
+  // VEGAPULS 6X: configured scaling lives in HART cmd 152 (device-specific read),
+  // not in universal cmd 15. Transaction 16 returns min/max scaled values;
+  // transaction 19 returns integration time (damping).
+  static const uint8_t kScaleReq[] = {0x01, 0x03, 0xFC, 0x00, 0xAB, 0x0B};
+  static const uint8_t kDampReq[] = {0x01, 0x03, 0xFC, 0x00, 0xA9, 0x04};
+  bool gotRange = false;
+
+  if (transact(true, 0, 152, kScaleReq, sizeof(kScaleReq),
+               HART_MASTER_WRITE_RESP_TIMEOUT_MS) &&
+      rxPayloadLen >= 14) {
+    float lrv = beFloat(&rxPayload[6]);   // 0% scaled value
+    float urv = beFloat(&rxPayload[10]);  // 100% scaled value
+    if (!isZeroRange(urv, lrv)) {
+      device.configLrv = lrv;
+      device.configUrv = urv;
+      device.configValid = true;
+      device.configLastMs = millis();
+      device.configRangeSource = "cmd152";
+      gotRange = true;
+    }
+    if (rxPayloadLen >= 15 && rxPayload[14]) {
+      device.configUnits = rxPayload[14];
+      if (!device.pvUnitsCode) {
+        device.pvUnitsCode = rxPayload[14];
+        device.pvUnits = unitString(rxPayload[14]);
+      }
+    }
+  }
+
+  if (transact(true, 0, 152, kDampReq, sizeof(kDampReq),
+               HART_MASTER_WRITE_RESP_TIMEOUT_MS) &&
+      rxPayloadLen >= 10) {
+    float damp = beFloat(&rxPayload[6]);
+    if (!isnan(damp)) {
+      device.configDamping = damp;
+      device.configValid = true;
+      device.configLastMs = millis();
+    }
+  }
+  return gotRange;
+}
+
 // ---------------------------------------------------------------------------
 // Frame build / receive / transact
 // ---------------------------------------------------------------------------
@@ -907,9 +950,14 @@ bool HartMaster::readConfigDirect() {
   if (transact(true, 0, 15, nullptr, 0, HART_MASTER_WRITE_RESP_TIMEOUT_MS)) {
     applyResponse(15, rxPayload, rxPayloadLen);
   }
-  // Rosemount 3408 (0x62BB): cmd 15 is distance/output span; read real range via cmd 149.
+  // Rosemount 3408 (mfr 38, type 0x62BB): cmd 15 is output span; use cmd 149.
+  // VEGAPULS 6X (mfr 98, type 0x62BB): cmd 15 is not configured level range; use cmd 152.
   if (device.deviceType == 0x62BB) {
-    readRosemountRangeVia149();
+    if (device.manufacturerId == 38) {
+      readRosemountRangeVia149();
+    } else if (device.manufacturerId == 98) {
+      readVegaConfigVia152();
+    }
   }
   if (!device.configUnits &&
       transact(true, 0, 14, nullptr, 0, HART_MASTER_WRITE_RESP_TIMEOUT_MS)) {

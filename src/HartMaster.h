@@ -173,6 +173,7 @@ private:
                               float &damping, uint8_t &writeProtect);
   void mergeConfigRangeFromWritten();
   bool readRosemountRangeVia149();
+  bool readVegaConfigVia152();
 
   // Bridge-task maintenance slot (web handler waits on maintDone).
   volatile MaintOp maintOp;

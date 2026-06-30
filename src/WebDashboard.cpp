@@ -1,5 +1,7 @@
 #include "WebDashboard.h"
 
+#include <Update.h>
+
 #include "BatteryManager.h"
 #include "HartBridge.h"
 #include "HartMaster.h"
@@ -16,7 +18,7 @@
 WebDashboard::WebDashboard()
     : server(WEB_SERVER_PORT), startMs(0), settings(nullptr), battery(nullptr),
       hart(nullptr), tcp(nullptr), trend(nullptr), master(nullptr), led(nullptr),
-      rebootReq(false), factoryReq(false) {}
+      rebootReq(false), factoryReq(false), otaRebootReq(false) {}
 
 void WebDashboard::begin(SettingsManager *s, BatteryManager *b, HartBridge *h,
                          TcpBridge *t, TrendLogger *tr, HartMaster *m,
@@ -133,6 +135,37 @@ void WebDashboard::setupRoutes() {
     resp += hart->isInternalResistorEnabled() ? "true" : "false";
     resp += "}";
     req->send(200, "application/json", resp);
+  });
+
+  // Generic HART command engine — register BEFORE /api/hart (prefix routes
+  // in ESPAsyncWebServer would otherwise steal /api/hart/cmd).
+  server.on("/api/hart/cmd", HTTP_POST, [this](AsyncWebServerRequest *req) {
+    if (!req->hasParam("command", true)) {
+      req->send(400, "application/json", "{\"error\":\"command required\"}");
+      return;
+    }
+    uint8_t command = (uint8_t)req->getParam("command", true)->value().toInt();
+    uint8_t data[64];
+    uint8_t len = 0;
+    if (req->hasParam("data", true)) {
+      String hex = req->getParam("data", true)->value();
+      len = hexToBytes(hex, data, sizeof(data));
+    }
+    uint32_t id = master->queueCommand(command, len ? data : nullptr, len);
+    if (id == 0) {
+      req->send(409, "application/json",
+                "{\"error\":\"busy or no device\"}");
+      return;
+    }
+    req->send(200, "application/json", "{\"id\":" + String(id) + "}");
+  });
+
+  server.on("/api/hart/cmd", HTTP_GET, [this](AsyncWebServerRequest *req) {
+    uint32_t id = 0;
+    if (req->hasParam("id")) {
+      id = (uint32_t)req->getParam("id")->value().toInt();
+    }
+    req->send(200, "application/json", master->resultJson(id));
   });
 
   server.on("/api/settings", HTTP_GET, [this](AsyncWebServerRequest *req) {
@@ -277,38 +310,6 @@ void WebDashboard::setupRoutes() {
     req->send(200, "application/json", systemStatus.getLogJson());
   });
 
-  // ---- Generic HART command engine ----
-  // POST /api/hart/cmd  params: command=<int>, data=<hex bytes optional>
-  server.on("/api/hart/cmd", HTTP_POST, [this](AsyncWebServerRequest *req) {
-    if (!req->hasParam("command", true)) {
-      req->send(400, "application/json", "{\"error\":\"command required\"}");
-      return;
-    }
-    uint8_t command = (uint8_t)req->getParam("command", true)->value().toInt();
-    uint8_t data[64];
-    uint8_t len = 0;
-    if (req->hasParam("data", true)) {
-      String hex = req->getParam("data", true)->value();
-      len = hexToBytes(hex, data, sizeof(data));
-    }
-    uint32_t id = master->queueCommand(command, len ? data : nullptr, len);
-    if (id == 0) {
-      req->send(409, "application/json",
-                "{\"error\":\"busy or no device\"}");
-      return;
-    }
-    req->send(200, "application/json", "{\"id\":" + String(id) + "}");
-  });
-
-  // GET /api/hart/cmd?id=<n>  -> result of a queued command
-  server.on("/api/hart/cmd", HTTP_GET, [this](AsyncWebServerRequest *req) {
-    uint32_t id = 0;
-    if (req->hasParam("id")) {
-      id = (uint32_t)req->getParam("id")->value().toInt();
-    }
-    req->send(200, "application/json", master->resultJson(id));
-  });
-
   // ---- Profiles ----
   server.on("/api/profiles", HTTP_GET, [](AsyncWebServerRequest *req) {
     req->send(200, "application/json", profiles.listJson());
@@ -355,6 +356,40 @@ void WebDashboard::setupRoutes() {
         if (final) {
           profiles.uploadEnd();
           systemStatus.log("[PROFILE] Uploaded " + filename);
+        }
+      });
+
+  // WiFi firmware update (multipart .bin). Reboot after successful flash.
+  server.on(
+      "/api/firmware/upload", HTTP_POST,
+      [this](AsyncWebServerRequest *req) {
+        bool ok = !Update.hasError();
+        req->send(ok ? 200 : 500, "application/json",
+                  String("{\"ok\":") + (ok ? "true" : "false") + "}");
+        if (ok) {
+          otaRebootReq = true;
+        }
+      },
+      [](AsyncWebServerRequest *req, const String &filename, size_t index,
+         uint8_t *data, size_t len, bool final) {
+        if (index == 0) {
+          if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
+            Update.printError(Serial);
+            return;
+          }
+          systemStatus.log("[OTA] Begin " + filename);
+        }
+        if (Update.write(data, len) != len) {
+          Update.printError(Serial);
+          Update.abort();
+          return;
+        }
+        if (final) {
+          if (Update.end(true)) {
+            systemStatus.log("[OTA] Flash OK (" + String(index + len) + " bytes)");
+          } else {
+            Update.printError(Serial);
+          }
         }
       });
 

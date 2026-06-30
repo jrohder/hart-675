@@ -25,6 +25,7 @@ public:
   // Set by the loop so callers can act on requested async operations.
   bool rebootRequested() const { return rebootReq; }
   bool factoryResetRequested() const { return factoryReq; }
+  bool otaRebootRequested() const { return otaRebootReq; }
 
 private:
   AsyncWebServer server;
@@ -40,6 +41,7 @@ private:
 
   volatile bool rebootReq;
   volatile bool factoryReq;
+  volatile bool otaRebootReq;
 
   String buildStatusJson();
   void setupRoutes();

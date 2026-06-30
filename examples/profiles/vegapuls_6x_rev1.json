@@ -1,0 +1,87 @@
+{
+  "manufacturer": "VEGA Grieshaber KG",
+  "device": "VEGAPULS 6X",
+  "revision": 1,
+  "version": "2.0",
+  "author": "Hart 675 DD Profiler",
+  "match": { "manufacturerId": 98, "deviceType": 25275, "revision": 1 },
+  "pages": [
+    {
+      "title": "Live Process Values",
+      "widgets": [
+        { "type": "section", "label": "Dynamic variables (HART cmd 3)" },
+        { "type": "read", "label": "Primary Variable (PV)", "units": "%",
+          "read": { "command": 3, "decode": "float", "offset": 0 } },
+        { "type": "read", "label": "Secondary Variable (SV)", "units": "",
+          "read": { "command": 3, "decode": "float", "offset": 5 } },
+        { "type": "read", "label": "Tertiary Variable (TV)", "units": "",
+          "read": { "command": 3, "decode": "float", "offset": 10 } },
+        { "type": "read", "label": "Quaternary Variable (QV)", "units": "",
+          "read": { "command": 3, "decode": "float", "offset": 15 } },
+        { "type": "read", "label": "Loop Current", "units": "mA",
+          "read": { "command": 3, "decode": "float", "offset": 20 } },
+        { "type": "read", "label": "Percent Range", "units": "%",
+          "read": { "command": 3, "decode": "float", "offset": 24 } }
+      ]
+    },
+    {
+      "title": "Measured values",
+      "widgets": [
+        { "type": "section", "label": "Level / distance (HART cmd 152 trans 87)" },
+        { "type": "read", "label": "Distance", "units": "",
+          "read": { "command": 152, "data": "0203FC00C80E03FC00CA0E", "decode": "float", "offset": 11, "dec": 3 } },
+        { "type": "read", "label": "Filling height", "units": "",
+          "read": { "command": 152, "data": "0203FC00C80E03FC00CA0E", "decode": "float", "offset": 17, "dec": 3 } },
+        { "type": "read", "label": "Percent", "units": "%",
+          "read": { "command": 152, "data": "0203FC00C80E03FC00CA0E", "decode": "float", "offset": 23, "dec": 2 } },
+        { "type": "read", "label": "Lin. percent", "units": "%",
+          "read": { "command": 152, "data": "0203FC00C80E03FC00CA0E", "decode": "float", "offset": 29, "dec": 2 } },
+        { "type": "section", "label": "Reliability / scaled (HART cmd 152 trans 88)" },
+        { "type": "read", "label": "Measurement reliability", "units": "%",
+          "read": { "command": 152, "data": "0203FC00CE0703FC00CC07", "decode": "float", "offset": 11, "dec": 1 } },
+        { "type": "read", "label": "Scaled", "units": "",
+          "read": { "command": 152, "data": "0203FC00CE0703FC00CC07", "decode": "float", "offset": 17, "dec": 3 } }
+      ]
+    },
+    {
+      "title": "Scaling",
+      "widgets": [
+        { "type": "section", "label": "Configured scaling (HART cmd 152/153 trans 16/15)" },
+        { "type": "number", "label": "0% corresponds to (LRV)", "units": "",
+          "read": { "command": 152, "data": "0103FC00AB0B", "decode": "float", "offset": 6, "dec": 3 },
+          "write": { "command": 153, "data": "0103FC00AB0B0000000000000000000000", "encode": "float", "offset": 6 } },
+        { "type": "number", "label": "100% corresponds to (URV)", "units": "",
+          "read": { "command": 152, "data": "0103FC00AB0B", "decode": "float", "offset": 10, "dec": 3 },
+          "write": { "command": 153, "data": "0103FC00AB0B0000000000000000000000", "encode": "float", "offset": 10 } }
+      ]
+    },
+    {
+      "title": "Damping",
+      "widgets": [
+        { "type": "number", "label": "Integration time (t)", "units": "s",
+          "read": { "command": 152, "data": "0103FC00A904", "decode": "float", "offset": 6, "dec": 1 },
+          "write": { "command": 153, "data": "0103FC00A90400000000", "encode": "float", "offset": 6 } }
+      ]
+    },
+    {
+      "title": "Current output",
+      "widgets": [
+        { "type": "read", "label": "Loop Current", "units": "mA",
+          "read": { "command": 2, "decode": "float", "offset": 0, "dec": 3 } },
+        { "type": "read", "label": "Primary Variable", "units": "",
+          "read": { "command": 1, "decode": "float", "offset": 1, "dec": 3 } }
+      ]
+    },
+    {
+      "title": "Device Identity",
+      "widgets": [
+        { "type": "read", "label": "Tag", "units": "",
+          "read": { "command": 13, "decode": "packed", "offset": 0, "len": 6 } },
+        { "type": "read", "label": "Descriptor", "units": "",
+          "read": { "command": 12, "decode": "packed", "offset": 0, "len": 12 } },
+        { "type": "read", "label": "Message", "units": "",
+          "read": { "command": 17, "decode": "packed", "offset": 0, "len": 24 } }
+      ]
+    }
+  ]
+}

@@ -8,7 +8,7 @@
 #define PRODUCT_NAME_SHORT "Hart 675"
 
 // ==================== Firmware ====================
-#define FW_VERSION "3.3.0"
+#define FW_VERSION "3.4.0"
 #define FW_BUILD_DATE __DATE__
 
 // Set to 0 for production use with PACTware over USB: the single USB UART is

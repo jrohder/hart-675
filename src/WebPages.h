@@ -414,7 +414,32 @@ function unpackAscii(a,off,nbytes){let s='';let chars=Math.floor(nbytes*8/6);
   return s.replace(/\s+$/,'');}
 
 //==================== generic HART command engine ====================
+function parseHartmonPayload(hexStr){
+  const b=hx2b(hexStr.replace(/\s+/g,''));
+  let i=0;while(i<b.length&&b[i]===0xFF)i++;
+  if(i>=b.length)return null;
+  const lng=(b[i]&0x80)!==0;const addrLen=lng?5:1;
+  if(i+1+addrLen+2>b.length)return null;
+  const cmd=b[i+1+addrLen],bc=b[i+1+addrLen+1];
+  const start=i+1+addrLen+2,payload=b.slice(start,start+bc);
+  if(payload.length<2)return null;
+  return {cmd,rc:payload[0],ds:payload[1],bytes:payload.slice(2)};
+}
+async function hartCmdViaMonitor(command,dataHex,t0){
+  for(let i=0;i<80;i++){
+    await sleep(100);
+    const frames=await fetch('/api/hartmon').then(r=>r.json());
+    for(let j=frames.length-1;j>=0;j--){
+      const f=frames[j];
+      if(f.dir!=='RX'||f.t<=t0)continue;
+      const p=parseHartmonPayload(f.hex);
+      if(p&&p.cmd==command)return {rc:p.rc,ds:p.ds,bytes:p.bytes,hex:b2hx(p.bytes)};
+    }
+  }
+  throw new Error('timeout');
+}
 async function hartCmd(command,dataHex){
+  const t0=(await fetch('/api/hartmon').then(r=>r.json()).catch(()=>[])).slice(-1)[0]?.t||0;
   const body=new URLSearchParams();body.set('command',command);
   if(dataHex)body.set('data',dataHex);
   const r=await fetch('/api/hart/cmd',{method:'POST',body});
@@ -426,6 +451,9 @@ async function hartCmd(command,dataHex){
     if(res.state==='done')return {rc:res.rc,ds:res.deviceStatus,bytes:hx2b(res.data),hex:res.data};
     if(res.state==='error')throw new Error('device did not respond');
     if(res.state==='unknown')throw new Error('result lost');
+    if(res.enabled!==undefined&&res.valid!==undefined){
+      return await hartCmdViaMonitor(command,dataHex,t0);
+    }
   }
   throw new Error('timeout');
 }
@@ -927,38 +955,38 @@ async function renderWidget(w){
   }
   if(w.type==='status'){
     let v='--',cls='mut';
-    try{if(w.read){const r=await hartCmd(w.read.command,'');const raw=decode(r.bytes,w.read);
+    try{if(w.read){const r=await hartCmd(w.read.command,w.read.data||'');const raw=decode(r.bytes,w.read);
       const ok=(w.okValue==null)?(raw===0||raw==='0'):(raw==w.okValue);
       cls=ok?'ok':'bad';v=ok?(w.okText||'OK'):(w.badText||('0x'+Number(raw).toString(16)));}}catch(e){v='err';cls='bad';}
     return '<div class="row"><span class="k">'+esc(w.label)+'</span><span class="v '+cls+'">'+v+'</span></div>';
   }
   if(w.type==='enum'||w.type==='radio'){
-    let cur='';try{if(w.read){const r=await hartCmd(w.read.command,'');cur=r.bytes[w.read.offset||0];}}catch(e){}
+    let cur='';try{if(w.read){const r=await hartCmd(w.read.command,w.read.data||'');cur=r.bytes[w.read.offset||0];}}catch(e){}
     let opts=(w.options||[]).map(o=>'<option value="'+o.v+'"'+(o.v==cur?' selected':'')+'>'+esc(o.t)+'</option>').join('');
     return '<label class="fl">'+esc(w.label)+'</label>'+help+'<select id="'+id+'">'+opts+'</select>'+
-      (w.write?'<button class="btn" onclick="wEnum(\''+id+'\','+w.write.command+')">Write '+esc(w.label)+'</button>':'');
+      (w.write?'<button class="btn" onclick=\'wEnum("'+id+'",'+JSON.stringify(w.write)+',"'+esc(w.label)+'")\'>Write '+esc(w.label)+'</button>':'');
   }
   if(w.type==='checkbox'){
-    let on=false;try{if(w.read){const r=await hartCmd(w.read.command,'');on=!!r.bytes[w.read.offset||0];}}catch(e){}
+    let on=false;try{if(w.read){const r=await hartCmd(w.read.command,w.read.data||'');on=!!r.bytes[w.read.offset||0];}}catch(e){}
     return '<div class="row"><span class="k">'+esc(w.label)+'</span><span class="v">'+
       '<input type="checkbox" id="'+id+'" style="width:auto"'+(on?' checked':'')+
       (w.write?' onchange="wChk(\''+id+'\','+w.write.command+')"':'')+'></span></div>'+help;
   }
   if(w.type==='slider'){
-    let cur=NaN;try{if(w.read){const r=await hartCmd(w.read.command,'');cur=decode(r.bytes,w.read);}}catch(e){}
+    let cur=NaN;try{if(w.read){const r=await hartCmd(w.read.command,w.read.data||'');cur=decode(r.bytes,w.read);}}catch(e){}
     const mn=w.min==null?0:w.min,mx=w.max==null?100:w.max;
     return '<label class="fl">'+esc(w.label)+(w.units?(' ('+esc(w.units)+')'):'')+'</label>'+help+
       '<input id="'+id+'" type="range" min="'+mn+'" max="'+mx+'" step="'+(w.step||'any')+'" value="'+(isNaN(cur)?mn:cur)+'" oninput="$(\''+id+'v\').textContent=this.value">'+
       '<div class="mut" id="'+id+'v">'+(isNaN(cur)?mn:cur)+'</div>'+
-      (w.write?'<button class="btn" onclick="wNum(\''+id+'\','+w.write.command+',\''+(w.write.encode||'float')+'\',\''+esc(w.label)+'\')">Write</button>':'');
+      (w.write?'<button class="btn" onclick=\'wNum("'+id+'",'+JSON.stringify(w.write)+',"'+esc(w.label)+'")\'>Write</button>':'');
   }
   if(w.type==='number'||w.type==='float'||w.type==='text'){
     const isText=w.type==='text';let cur=isText?'':NaN;
-    try{if(w.read){const r=await hartCmd(w.read.command,'');cur=decode(r.bytes,w.read);}}catch(e){}
+    try{if(w.read){const r=await hartCmd(w.read.command,w.read.data||'');cur=decode(r.bytes,w.read);}}catch(e){}
     const val=isText?esc(cur||''):(isNaN(cur)?'':cur);
     return '<label class="fl">'+esc(w.label)+(w.units?(' ('+esc(w.units)+')'):'')+'</label>'+help+
       '<input id="'+id+'" type="'+(isText?'text':'number')+'"'+(isText?'':' step="any"')+' value="'+val+'">'+
-      (w.write?'<button class="btn" onclick="wNum(\''+id+'\','+w.write.command+',\''+(w.write.encode||(isText?'ascii':'float'))+'\',\''+esc(w.label)+'\')">Write</button>':'');
+      (w.write?'<button class="btn" onclick=\'wNum("'+id+'",'+JSON.stringify(w.write)+',"'+esc(w.label)+'")\'>Write</button>':'');
   }
   if(w.type==='button'){
     return '<button class="btn '+(w.style||'sec')+'" onclick="wBtn('+w.command+',\''+(w.data||'')+'\',\''+esc(w.label)+'\','+(w.confirm?'true':'false')+')">'+esc(w.label||'Send')+'</button>'+help;
@@ -988,18 +1016,46 @@ async function echoWidget(cid,w){
     drawGraph(cid,pts,'#4fc3f7');
   }catch(e){drawGraph(cid,[],'#4fc3f7');}
 }
-async function wEnum(id,cmd){const v=parseInt($(id).value);
-  if(!await confirmDialog('Write',[['New value',v]]))return;
-  try{await hartCmd(cmd,b2hx([v]));toast('Written');}catch(e){toast('Failed: '+e.message);}}
-async function wNum(id,cmd,enc,label){
+async function wEnum(id,writeSpec,label){
+  const v=parseInt($(id).value);
+  const cmd=writeSpec.command;
+  const enc=(writeSpec&&writeSpec.encode)||'u8';
+  const valBytes=enc==='u16'?[(v>>8)&255,v&255]:[v&255];
+  let data;
+  if(writeSpec.data){
+    const base=hx2b(writeSpec.data);
+    const off=writeSpec.offset||0;
+    for(let i=0;i<valBytes.length&&off+i<base.length;i++) base[off+i]=valBytes[i];
+    data=b2hx(base);
+  }else if(writeSpec.dataPrefix){
+    data=writeSpec.dataPrefix+b2hx(valBytes);
+  }else{
+    data=b2hx(valBytes);
+  }
+  if(!await confirmDialog('Write '+label,[['New value',v]]))return;
+  try{await hartCmd(cmd,data);toast('Written');}catch(e){toast('Failed: '+e.message);}}
+async function wNum(id,writeSpec,label){
+  const enc=(writeSpec&&writeSpec.encode)||'float';
+  const cmd=writeSpec.command;
   let data,shown;
   if(enc==='ascii'){
     const s=$(id).value||'';shown=s;
     data=b2hx(Array.from(s).map(c=>c.charCodeAt(0)&255));
   }else{
     const v=parseFloat($(id).value);if(isNaN(v))return toast('Enter value');shown=v;
-    data=enc==='u8'?b2hx([v&255]):enc==='u16'?b2hx([(v>>8)&255,v&255]):
-         enc==='u32'?b2hx([(v>>24)&255,(v>>16)&255,(v>>8)&255,v&255]):b2hx(wrFloat(v));
+    const valBytes=enc==='u8'?[v&255]:enc==='u16'?[(v>>8)&255,v&255]:
+         enc==='u32'?[(v>>24)&255,(v>>16)&255,(v>>8)&255,v&255]:wrFloat(v);
+    if(writeSpec.data){
+      const base=hx2b(writeSpec.data);
+      const off=writeSpec.offset||0;
+      for(let i=0;i<valBytes.length&&off+i<base.length;i++) base[off+i]=valBytes[i];
+      data=b2hx(base);
+    }else if(writeSpec.dataPrefix){
+      data=writeSpec.dataPrefix+b2hx(valBytes);
+    }else{
+      data=enc==='u8'?b2hx([v&255]):enc==='u16'?b2hx([(v>>8)&255,v&255]):
+           enc==='u32'?b2hx([(v>>24)&255,(v>>16)&255,(v>>8)&255,v&255]):b2hx(wrFloat(v));
+    }
   }
   if(!await confirmDialog('Write '+label,[['New',shown]]))return;
   try{await hartCmd(cmd,data);toast('Written');}catch(e){toast('Failed: '+e.message);}}
@@ -1144,7 +1200,7 @@ async function processDdPackages(){
       const idx=ddPending.length;
       ddPending.push({res:res,fname:DDParser.suggestFilename(res.profile)});
       const p=res.profile||{};
-      const tierTxt=res.tier==='B'?'<span class=ok>Full (menus extracted)</span>':'<span class=warn>Identity + generic</span>';
+      const tierTxt=res.tier==='C'?'<span class=ok>Full (command wired)</span>':res.tier==='B'?'<span class=ok>Full (menus extracted)</span>':'<span class=warn>Identity + generic</span>';
       let warn=res.warnings.length?('<div class="mut" style="font-size:12px;margin-top:6px">'+res.warnings.map(w=>'&bull; '+w).join('<br>')+'</div>'):'';
       box.innerHTML+='<div class="card" style="background:var(--panel2)">'+
         '<div class="row"><span class="k">'+(p.manufacturer||'?')+' '+(p.device||'')+'</span>'+
